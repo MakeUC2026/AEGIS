@@ -1,0 +1,73 @@
+# Merge rule for every machine (M1 §0.6): this must be green before any merge to main.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: timescale/timescaledb-ha:pg16
+        env:
+          POSTGRES_USER: aegis
+          POSTGRES_PASSWORD: aegis-ci-only
+          POSTGRES_DB: aegis
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U aegis" --health-interval 3s --health-timeout 3s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://aegis:aegis-ci-only@127.0.0.1:55432/aegis_test
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.13.6"
+      - run: uv sync --frozen --python 3.12
+      - name: Lint (ruff, incl. bandit S rules)
+        run: uv run ruff check . && uv run ruff format --check .
+      - name: Tests (unit + integration on TimescaleDB, runs alembic upgrade heads)
+        run: uv run pytest -p no:warnings
+      - name: SCA (pip-audit)
+        run: uv run pip-audit --progress-spinner off
+
+  frontend:
+    runs-on: ubuntu-latest
+    if: hashFiles('frontend/package.json') != ''
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - name: SCA (npm audit, high and above)
+        run: npm audit --audit-level=high --omit=dev
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks (PRD §15.2)
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.24.0 \
+            detect --source /repo --redact --verbose --exit-code 1

@@ -52,7 +52,7 @@ All shapes are Pydantic v2 models in `backend/app/contracts/` (PRD D-16, §14). 
 | C7 Sentinel plug-ins (new) | `contracts/sentinel.py` (`RiskyHistoryPort`, `JudgePort`) | `app/firewall/risky_history.py`, `app/firewall/judge.py` (M3) | M2 | `InMemoryRiskyHistory`, `StubJudge` |
 | C8 Arena admin and teacher operations (new) | `contracts/arena.py` | `app/arena/service.py` (M1) | M3 (Levels screen), M4 (secrets, quiz) | `FakeArenaService` |
 | LLM clients | `app/llm/` (`GeminiClient.generate_json`, `GeminiClient.embed`, `XaiClient.chat_with_tools`, `ScriptedLLM`) | M1 | M2, M3, M4 | `ScriptedLLM` replays scripted answers |
-| Audit | `app/db/audit.py::record_audit(actor_id, entity, entity_id, action, before, after)` | M1 | all | writes to the real table, or to an in-memory list in unit tests |
+| Audit | `app/db/audit.py::record_audit(conn, *, actor_id, entity, entity_id, action, before, after)` (joins the caller's transaction; refuses secret values) | M1 | all | writes to the real table, or to an in-memory list in unit tests |
 
 **Wiring.** `app/firewall/ports.py` (M1) returns the real or the fake implementation of each seam. The env var `AEGIS_USE_FAKES` takes a comma list (`firewall,read,admin,risky,judge,arena`). Each machine's branch sets only what it lacks. At integration the value is empty.
 
