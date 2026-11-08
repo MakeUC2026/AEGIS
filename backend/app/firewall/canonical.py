@@ -38,7 +38,9 @@ MAX_URL_DECODE_ROUNDS = 3  # %252e -> %2e -> . (double encoding), with headroom
 HASH_PREFIX = "sha256:"
 ERROR_DETAIL_MAX = 200
 
-_LOCAL_PART = re.compile(r"[a-z0-9.!#$%&'*+/=?^_`{|}~-]+")
+# No % or ! in the local part: legacy mail systems read them as source routes (M2-DD-09).
+_LOCAL_PART = re.compile(r"[a-z0-9.#$&'*+/=?^_`{|}~-]+")
+_STILL_ENCODED = re.compile(r"%[0-9A-Fa-f]{2}")
 _DOMAIN = re.compile(r"[a-z0-9-]+(\.[a-z0-9-]+)+")
 
 ErrorReason = Literal["unknown_tool", "schema_invalid", "bad_recipient", "bad_path"]
@@ -130,6 +132,8 @@ def _url_decode(value: str) -> str:
 
 def _resolve_path(raw: str) -> ResolvedPath:
     decoded = _url_decode(raw)
+    if _STILL_ENCODED.search(decoded):
+        raise _Reject("bad_path", "path is still URL-encoded after decoding")
     if any(unicodedata.category(ch) in ("Cc", "Cf") for ch in decoded):
         raise _Reject("bad_path", "control or format character in path")
     slashed = decoded.replace("\\", "/")
@@ -152,17 +156,24 @@ def args_hash(tool: str, args: Mapping[str, Any]) -> str:
     return HASH_PREFIX + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _text_arg(args: Mapping[str, Any], name: str) -> str:
+    value = args.get(name)
+    if not isinstance(value, str):
+        raise _Reject("schema_invalid", f"argument {name!r} must be text")
+    return value
+
+
 def _build(tool: ToolDef, raw_args: Any, call_id: str) -> CanonicalCall:
     _validate(tool.json_schema, raw_args)
     args: dict[str, Any] = _nfkc(raw_args)
     recipients: tuple[str, ...] = ()
     for name in RECIPIENT_ARGS.get(tool.name, ()):
-        parsed = _recipients(args[name])
+        parsed = _recipients(_text_arg(args, name))
         recipients = (*recipients, *parsed)
         args = {**args, name: ", ".join(parsed)}
     paths: dict[str, ResolvedPath] = {}
     for name in PATH_ARGS.get(tool.name, ()):
-        resolved = _resolve_path(args[name])
+        resolved = _resolve_path(_text_arg(args, name))
         paths = {**paths, name: resolved}
         args = {**args, name: resolved.resolved}
     _validate(tool.json_schema, args)  # normalization can lengthen strings
@@ -188,3 +199,5 @@ def canonicalize(
         return _build(tool, raw_args, call_id)
     except _Reject as rejected:
         return CanonicalError(rejected.reason, rejected.detail)
+    except Exception as exc:  # any other surprise fails closed (Deny)
+        return CanonicalError("schema_invalid", f"unexpected argument shape: {type(exc).__name__}")

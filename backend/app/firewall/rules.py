@@ -150,25 +150,28 @@ def _matches(form: RuleForm, subject: RuleSubject) -> bool:
         return _numeric(op, field, form.value)
     if op in ("domain_in", "domain_not_in"):
         domains = _domains(form, subject.call)
-        if not domains:
-            return False
+        if not domains:  # the argument exists but was never parsed as recipients: fail closed
+            raise _Failure("bad_value", "domain operators need a parsed recipient argument")
         allowed = {d.lower() for d in _as_list(form.value)}
         outside = any(d not in allowed for d in domains)
         return outside if op == "domain_not_in" else not outside
     if op in ("inside_workspace", "outside_workspace"):
         path = subject.call.paths.get(form.argument_name or "") if subject.call else None
-        if path is None:
-            return False
+        if path is None:  # the argument exists but was never resolved as a path: fail closed
+            raise _Failure("bad_value", "workspace operators need a resolved path argument")
         return path.inside_workspace if op == "inside_workspace" else not path.inside_workspace
-    text = normalize(str(field))
+    # Both readings of the text: invisible characters removed, and read as spaces (M2-DD-17).
+    texts = {normalize(str(field)), normalize(str(field), invisible_as_space=True)}
     if op == "contains":
-        return normalize(_as_str(form.value)) in text
+        needle = normalize(_as_str(form.value))
+        return any(needle in text for text in texts)
     if op == "equals":
-        return text == normalize(_as_str(form.value))
+        return normalize(_as_str(form.value)) in texts
     if op == "in_list":
-        return text in {normalize(v) for v in _as_list(form.value)}
+        return bool(texts & {normalize(v) for v in _as_list(form.value)})
     if op == "regex":
-        return _regex(_as_str(form.value)).search(text) is not None
+        pattern = _regex(_as_str(form.value))
+        return any(pattern.search(text) is not None for text in texts)
     raise _Failure("bad_value", f"operator {op!r} does not apply to {form.checks!r}")
 
 

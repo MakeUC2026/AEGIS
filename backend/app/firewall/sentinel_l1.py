@@ -43,11 +43,9 @@ _BASE64_BLOB = re.compile(r"[A-Za-z0-9+/]{20,}={0,2}")
 _HEX_BLOB = re.compile(r"\b[0-9a-fA-F]{16,}\b")
 _SPACED_WORD = re.compile(r"(?<!\S)(?:\w ){4,}\w(?!\S)")  # "s y s t e m"
 _FORGED_APPROVAL = re.compile(
-    r"\b(approved|authori[sz]ed|signed off|cleared)\s+by\s+(the\s+)?"
-    r"(admin|administrator|security( team)?|it( department)?|management|ceo|cto|"
-    r"(operations\s+)?director|firewall admin)\b"
+    r"\b(approved|authori[sz]ed|signed off|cleared|granted)\s+by\b"  # credited to anyone
     r"|\b(admin|administrator)\s+(has\s+)?(approved|authori[sz]ed)\b"
-    r"|\bpre-?approved\b|\bapproval (granted|code)\b"
+    r"|\bpre-?approved\b|\bapproval\s+(granted|code|id|number|ref(erence)?)\b"
 )
 
 SIGNAL_KEYS: tuple[str, ...] = (

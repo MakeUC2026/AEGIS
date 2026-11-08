@@ -15,17 +15,21 @@ RULE_SET_VERSION = 1
 ALLOWED_EMAIL_DOMAINS = ["company.example"]  # PRD §5.1 scenario allowlist
 
 _OVERRIDE = (
-    r"\b(ignore|disregard|forget)\s+(all\s+|any\s+|the\s+|your\s+)?"
+    r"\b(ignore|disregard|forget)\s+(all\s+|any\s+|the\s+|your\s+|everything\s+)?"
     r"(previous|prior|above|earlier)\b|\byou are now\b|\bsystem prompt\b"
 )
 _AUTHORITY = (
     r"\b(i am|i'm|this is)\s+(the\s+|an\s+|a\s+|your\s+)?"
-    r"(administrator|admin|ceo|cto|it director|operations director|security team|system owner)\b"
+    r"(administrator|admin|ceo|cto|it director|operations director|security team|system owner"
+    r"|head of it|chief (executive|security|technology|information)( officer)?)\b"
 )
 _DESTRUCTIVE_SQL = r"\b(drop|delete|truncate)\b"
 _SHELL_ABUSE = (
-    r"\b(curl|wget|nc|ncat|netcat|ssh|scp|ftp)\b"
-    r"|\brm\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r|-r\s+-f|-f\s+-r)"
+    r"\b(curl|wget|nc|ncat|netcat|ssh|scp|sftp|ftp|telnet|socat)\b"
+    r"|\brm\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r|-r\s+-f|-f\s+-r|--recursive|--force)"
+    r"|\bdd\s+(if|of)="
+    r"|\bfind\b.*\s-delete\b"
+    r"|\b(python[0-9.]*|perl|ruby|node|bash|sh|zsh)\s+-[ce]\b"
 )
 
 STARTING_RULES: tuple[tuple[str, RuleForm], ...] = (

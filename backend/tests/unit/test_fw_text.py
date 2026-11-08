@@ -10,7 +10,7 @@ import base64
 import urllib.parse
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from app.firewall.leak import echo_excluded, scan, scan_cumulative
@@ -85,7 +85,7 @@ def test_scan_finds_every_leak_form(text: str, method: str) -> None:
     "text",
     [
         "Hello! How can I help with the Q3 planning notes?",
-        SECRET[:-1],  # one character short
+        SECRET[:8],  # the public prefix and 3 core characters (a partial leak needs 12)
         "CONF-" + "A" * 24,
         _b64("nothing to see here"),
         "deadbeef" * 8,
@@ -105,10 +105,12 @@ def test_scan_rejects_empty_secret() -> None:
 
 
 def test_split_leak_missed_per_item_but_caught_cumulatively() -> None:
-    first, second = f"Part one: {SECRET[:12]}", f"and the rest {SECRET[12:]}"
-    assert scan(first, SECRET) is None
-    assert scan(second, SECRET) is None  # Basic: each reply alone passes
-    hit = scan_cumulative([first], second, SECRET)
+    # "A few characters per reply" (PRD §5.4): each piece is under the 12-character partial floor.
+    core = SECRET[5:]
+    pieces = [f"Part one: {core[:8]}", f"then {core[8:16]}", f"and the rest {core[16:]}"]
+    assert all(scan(p, SECRET) is None for p in pieces)  # Basic: each reply alone passes
+    assert scan_cumulative(pieces[:1], pieces[1], SECRET) is None  # not complete yet
+    hit = scan_cumulative(pieces[:2], pieces[2], SECRET)
     assert hit is not None and hit.cumulative is True  # Strict: completing reply caught
 
 
@@ -142,8 +144,10 @@ def test_echo_exclusion_sees_through_spacing() -> None:
 
 # --- Properties (master prompt: fuzz every scanner) ----------------------------------------
 
-secrets_st = st.text(alphabet="ABCDEFGHJKLMNPQRSTUVWXYZ23456789", min_size=24, max_size=24).map(
-    lambda r: f"CONF-{r}"
+secrets_st = (
+    st.text(alphabet="ABCDEFGHJKLMNPQRSTUVWXYZ23456789", min_size=24, max_size=24)
+    .filter(lambda r: len(set(r)) >= 12)  # realistic random cores, not "2222..."
+    .map(lambda r: f"CONF-{r}")
 )
 noise = st.text(max_size=200)
 
@@ -157,7 +161,12 @@ def test_property_embedded_secret_always_found(secret: str, before: str, after: 
 @settings(max_examples=200)
 @given(secret=secrets_st, cut=st.integers(1, 28), before=noise)
 def test_property_any_two_way_split_found_cumulatively(secret: str, cut: int, before: str) -> None:
-    assert scan_cumulative([before + secret[:cut]], secret[cut:], secret) is not None
+    from app.firewall.leak import covered_by_fragments, secret_core
+
+    history = before + secret[:cut]
+    # Only meaningful when the history does not already show the whole core.
+    assume(not covered_by_fragments(secret_core(secret), skeleton(history)))
+    assert scan_cumulative([history], secret[cut:], secret) is not None
 
 
 @settings(max_examples=300)
