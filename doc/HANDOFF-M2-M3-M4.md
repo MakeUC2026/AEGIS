@@ -92,6 +92,7 @@ win in Off, a block in Basic and a divert in Strict, and `characters` gives the 
 | Theme tokens and shared classes | `frontend/app/globals.css` (use the variables, not hard-coded colors) |
 | Integration test fixtures (fresh DB per run) | `backend/tests/integration/conftest.py` |
 | Seed attack and benign fixtures | `fixtures/attacks/`, `fixtures/benign/` (add files with your `m2_`, `m3_`, `m4_` prefix) |
+| Your demo seed, picked up by `scripts/seed_demo.py` automatically | Write `async def seed(engine) -> None`, idempotent, in `backend/app/firewall/seed.py` (M2 rules), `backend/app/admin/seed.py` (M3), or `backend/app/classroom/seed.py` and `backend/app/quiz/seed.py` (M4). If the file is absent, it is skipped. Run `uv run python ../scripts/seed_demo.py` from `backend/`. Add `--reset` to wipe all app data first. A remote DB such as Tiger needs `--confirm-host <host>` |
 
 ## 5. Rules (from §0 of every progress doc)
 
