@@ -137,7 +137,7 @@ Each session stores a **snapshot** of its config, so later edits to a level neve
 
 - **Backend**: Python, FastAPI
 - **Frontend**: Next.js
-- **Database**: PostgreSQL
+- **Database**: Tiger Data (PostgreSQL)
 - **Authentication**: Auth0
 - **LLM provider**: Gemini API
 
