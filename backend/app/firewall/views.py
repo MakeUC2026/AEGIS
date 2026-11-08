@@ -30,7 +30,8 @@ def feed_item(checked: Checked) -> FeedItem:
         decision=decision,
         rule_ids=list(gate.rule_ids),
         score_band=gate.score_band,
-        shadow_decision=gate.shadow_decision,
+        # Off: only a shadow that differs from what happened is worth a "would have" line.
+        shadow_decision=gate.shadow_decision if gate.shadow_decision != "allow" else None,
     )
 
 

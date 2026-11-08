@@ -160,3 +160,15 @@ async def test_e53_echo_of_the_students_own_secret_is_not_a_win(engine: AsyncEng
     assert result.player_view.status == "replied"
     assert result.facts.secret_delivered is False  # echo exclusion
     assert result.facts.secret_attempted is True
+
+
+async def test_feed_shows_only_shadows_that_differ_from_allow(engine: AsyncEngine) -> None:
+    # Found in the live demo: "(would have allowed)" on every line buried the PRD line.
+    sid, owner = await _session(engine)
+    llm = ScriptedLLM(chat_answers=list(POISONED_RUN))
+    result = await run_message(engine, llm, owner, sid, "m1", "Summarise the Q3 notes", CLIENT)
+    shadows = [f.shadow_decision for f in result.player_view.defense_feed]
+    assert "allow" not in shadows
+    assert shadows.count("deny") == 1  # only the email check carries "would have denied"
+    events = await _events(engine, sid)
+    assert all(e["shadow_decision"] for e in events if e["stage"] != "tool_executed")
