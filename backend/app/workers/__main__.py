@@ -11,6 +11,7 @@ import signal
 from app.config import get_settings
 from app.db.engine import get_engine
 from app.firewall import ports
+from app.firewall.tickets import TICKET_SWEEP_INTERVAL_S, expire_due
 from app.llm.budget import DailyBudget
 from app.llm.gemini import GeminiClient
 from app.workers.events import FwEventSource
@@ -46,11 +47,18 @@ async def main() -> None:
     async def purge() -> None:
         await purge_trace_back(ports.get_firewall_admin())
 
+    async def sweep_tickets() -> None:  # a held item nobody decides expires as a Deny (E-47)
+        await expire_due(engine)
+
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
-    jobs = [(BACKFILL_INTERVAL_S, backfill), (float(PURGE_INTERVAL_S), purge)]
+    jobs = [
+        (BACKFILL_INTERVAL_S, backfill),
+        (float(PURGE_INTERVAL_S), purge),
+        (TICKET_SWEEP_INTERVAL_S, sweep_tickets),
+    ]
     try:
         await run_worker(worker, engine, stop=stop, jobs=jobs)
     finally:

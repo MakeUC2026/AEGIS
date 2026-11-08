@@ -66,7 +66,14 @@ export function QuizBlock({
         />
       ) : null}
       {kind === "firewall_admin" ? <p className="muted">Read-only: teachers assign quizzes.</p> : null}
-      {kind === "student" ? <p className="muted">Diverts and the firewall analysis open up after you take the quiz.</p> : null}
+      {kind === "student" && rows.length === 0 ? (
+        <p className="muted">Diverts and the firewall analysis open up after you take the quiz.</p>
+      ) : null}
+      {kind === "student" && rows.length > 0 ? (
+        <p className="muted">
+          The firewall analysis is open. See what stopped you under <Link href="/arena/sessions">My sessions</Link>.
+        </p>
+      ) : null}
     </details>
   );
 }
