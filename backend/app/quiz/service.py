@@ -8,6 +8,8 @@ failed or invalid quiz never leaves a partial one behind (M4-X17).
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -20,7 +22,14 @@ from app.contracts.users import CurrentUser
 from app.quiz import repo, rubric
 from app.quiz.classmate import TurnRecord, conversation_state, is_done, next_follow_up
 from app.quiz.context import build_context
-from app.quiz.errors import BadInput, Conflict, NotAllowed, QuizMissing, SessionMissing
+from app.quiz.errors import (
+    BadInput,
+    Conflict,
+    NotAllowed,
+    QuizMissing,
+    SessionMissing,
+    TooManyRequests,
+)
 from app.quiz.feedback import write_feedback
 from app.quiz.generator import generate_quiz
 from app.quiz.grader import GradingFailed, grade_free_response
@@ -40,6 +49,22 @@ from app.quiz.schemas import (
     ResultView,
     TurnOut,
 )
+
+# Model-spend guards (security review): one paid request at a time per quiz or per student and
+# session, and a cap on generated quizzes per student. Retakes stay allowed within the cap.
+QUIZ_STARTS_PER_HOUR = 6
+BUSY_START = "Your quiz is already being made. Wait a moment, then open it again."
+BUSY_QUIZ = "Your last message is still being processed. Wait a moment and try again."
+RATE_MESSAGE = "You have started many quizzes in the last hour. Please try again later."
+
+
+@asynccontextmanager
+async def _exclusive(deps: QuizDeps, *parts: str, busy: str) -> AsyncIterator[None]:
+    """Hold a non-blocking advisory lock for the block; a second caller gets 409 at once."""
+    async with deps.engine.connect() as conn, conn.begin():
+        if not await repo.try_lock(conn, *parts):
+            raise Conflict(busy)
+        yield
 
 
 @dataclass(frozen=True)
@@ -109,6 +134,25 @@ async def start_quiz(deps: QuizDeps, user: CurrentUser, session_id: str) -> Quiz
     if open_row is not None and open_row.status != "assigned":
         return await _resume(deps, session, open_row.id)
 
+    async with _exclusive(deps, "start", session_id, user.id, busy=BUSY_START):
+        async with deps.engine.connect() as conn:  # a request that held the lock may have finished
+            open_row = await repo.open_attempt(conn, sid, uid)
+            started = await repo.recent_generations(conn, uid, 1)
+        if open_row is not None and open_row.status != "assigned":
+            return await _resume(deps, session, open_row.id)
+        if started >= QUIZ_STARTS_PER_HOUR:
+            raise TooManyRequests(RATE_MESSAGE)
+        quiz_id = await _generate_and_store(deps, session, sid, uid, open_row)
+    return await _resume(deps, session, str(quiz_id) if quiz_id else None, sid=sid, uid=uid)
+
+
+async def _generate_and_store(
+    deps: QuizDeps,
+    session: ArenaSession,
+    sid: uuid.UUID,
+    uid: uuid.UUID,
+    open_row: QuizRow | None,
+) -> uuid.UUID | None:
     context = await build_context(session, arena=deps.arena, read=deps.read)
 
     async def redact(text: str) -> str:
@@ -118,12 +162,11 @@ async def start_quiz(deps: QuizDeps, user: CurrentUser, session_id: str) -> Quiz
         deps.runtime.llm, model=deps.runtime.pro_model, context=context, redact=redact
     )
     key = context.answer_key
+    quiz_id: uuid.UUID | None = None
     try:
         async with deps.engine.begin() as conn:
             if open_row is not None:  # an assigned quiz becomes the student's attempt
-                if not await repo.activate_assigned(conn, uuid.UUID(open_row.id), key):
-                    quiz_id = None
-                else:
+                if await repo.activate_assigned(conn, uuid.UUID(open_row.id), key):
                     quiz_id = uuid.UUID(open_row.id)
             else:
                 attempt = await repo.next_attempt_number(conn, sid, uid)
@@ -140,7 +183,7 @@ async def start_quiz(deps: QuizDeps, user: CurrentUser, session_id: str) -> Quiz
                 await repo.insert_questions(conn, quiz_id, spec)
     except IntegrityError:
         quiz_id = None  # lost a race with another start: use the winner's quiz
-    return await _resume(deps, session, str(quiz_id) if quiz_id else None, sid=sid, uid=uid)
+    return quiz_id
 
 
 async def _resume(
@@ -296,6 +339,13 @@ async def post_turn(
     body = body.strip()
     if not body:
         raise BadInput("write something first")
+    async with _exclusive(deps, "quiz", quiz_id, busy=BUSY_QUIZ):
+        return await _post_turn(deps, user, quiz_id, question_id, body)
+
+
+async def _post_turn(
+    deps: QuizDeps, user: CurrentUser, quiz_id: str, question_id: str, body: str
+) -> TurnOut:
     async with deps.engine.connect() as conn:
         row = await _owned_open_quiz(conn, user, quiz_id)
         qid = uuid.UUID(row.id)
@@ -390,6 +440,13 @@ async def finish_quiz(
     deps: QuizDeps, user: CurrentUser, quiz_id: str, *, regrade: bool = False
 ) -> ResultView:
     """Grade the quiz and write the feedback. Idempotent: a finished quiz returns its result."""
+    async with _exclusive(deps, "quiz", quiz_id, busy=BUSY_QUIZ):
+        return await _finish_quiz(deps, user, quiz_id, regrade=regrade)
+
+
+async def _finish_quiz(
+    deps: QuizDeps, user: CurrentUser, quiz_id: str, *, regrade: bool = False
+) -> ResultView:
     async with deps.engine.connect() as conn:
         qid = repo.parse_uuid(quiz_id)
         row = await repo.get_quiz(conn, qid) if qid else None

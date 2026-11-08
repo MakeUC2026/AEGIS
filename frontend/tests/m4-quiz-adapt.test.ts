@@ -112,6 +112,9 @@ describe("errorMessage", () => {
     expect(errorMessage(429, "Budget used")).toBe("Budget used");
     expect(errorMessage(502, "Try again")).toBe("Try again");
   });
+  it("shows the busy message on a 409 (a paid request is already running)", () => {
+    expect(errorMessage(409, "Your quiz is already being made.")).toBe("Your quiz is already being made.");
+  });
   it("is generic for other statuses and never echoes raw detail", () => {
     expect(errorMessage(500, "Traceback ...")).toBe("Something went wrong. Please try again.");
     expect(errorMessage(403, "forbidden")).toBe("You are not allowed to do that.");

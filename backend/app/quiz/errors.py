@@ -29,3 +29,7 @@ class Conflict(QuizError):
 
 class BadInput(QuizError):
     status_code = 422
+
+
+class TooManyRequests(QuizError):
+    status_code = 429

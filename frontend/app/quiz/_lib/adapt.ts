@@ -167,10 +167,10 @@ export function toAttempts(api: ApiAttemptList): AttemptsView {
 
 const GENERIC = "Something went wrong. Please try again.";
 
-/** Budget (429) and generation (502) messages are written for people by the API; anything else is
+/** Busy (409), rate or budget (429) and generation (502) messages are written for people by the API; anything else is
  *  replaced so raw server detail never reaches the screen. */
 export function errorMessage(status: number, detail: string): string {
-  if (status === 429 || status === 502) return detail;
+  if (status === 409 || status === 429 || status === 502) return detail;
   if (status === 403) return "You are not allowed to do that.";
   if (status === 404) return "That quiz could not be found.";
   return GENERIC;

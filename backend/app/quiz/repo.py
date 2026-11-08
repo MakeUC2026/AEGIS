@@ -477,3 +477,30 @@ async def get_result(conn: AsyncConnection, quiz_id: uuid.UUID) -> StoredResult 
     if r is None:
         return None
     return StoredResult(r[0], _json(r[1]), r[2], r[3], r[4])
+
+
+async def try_lock(conn: AsyncConnection, *parts: str) -> bool:
+    """Non-blocking transaction-scoped advisory lock. False when another request holds it.
+
+    Callers must be inside a transaction (the lock is released when it ends). Used so that only
+    one request at a time spends model calls for the same quiz or the same student and session.
+    """
+    got = await conn.execute(
+        text("SELECT pg_try_advisory_xact_lock(hashtextextended(:k, 0))"),
+        {"k": "m4:" + "|".join(parts)},
+    )
+    return bool(got.scalar_one())
+
+
+async def recent_generations(conn: AsyncConnection, user_id: uuid.UUID, hours: int) -> int:
+    """Quizzes this student started (generated) in the last `hours`; assigned ones do not count."""
+    n = (
+        await conn.execute(
+            text(
+                "SELECT count(*) FROM quiz WHERE user_id = :u AND status <> 'assigned'"
+                " AND created_at > now() - make_interval(hours => :h)"
+            ),
+            {"u": user_id, "h": hours},
+        )
+    ).scalar_one()
+    return int(n)

@@ -61,10 +61,13 @@ async def test_starting_again_resumes_without_a_duplicate(qw: QuizWorld) -> None
 
 async def test_two_simultaneous_starts_make_one_quiz(qw: QuizWorld) -> None:  # X14
     s = qw.session()
-    qw.script(json=[good_quiz(), good_quiz()])
+    llm = qw.script(json=[good_quiz(), good_quiz()])
     a, b = await asyncio.gather(qw.start(qw.ada, s.id), qw.start(qw.ada, s.id))
-    assert a.status_code == b.status_code == 200
-    assert a.json()["quiz_id"] == b.json()["quiz_id"]
+    assert {a.status_code, b.status_code} <= {200, 409} and 200 in {a.status_code, b.status_code}
+    winner = a if a.status_code == 200 else b
+    assert len(llm.json_calls) == 1  # the loser is refused before any model call
+    again = await qw.start(qw.ada, s.id)  # the loser simply opens the same quiz
+    assert again.status_code == 200 and again.json()["quiz_id"] == winner.json()["quiz_id"]
     assert await _rows(qw) == 1 and await _rows(qw, "quiz_questions") == 7
 
 
