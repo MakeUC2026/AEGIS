@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import pathlib
 import re
 import unicodedata
@@ -101,3 +102,28 @@ class Judge:
 
     def model_id(self) -> str:
         return self._model
+
+
+def policy_path() -> pathlib.Path:
+    """`AEGIS_POLICY_PATH` overrides the repo path (the backend image may lay files out else)."""
+    override = os.environ.get("AEGIS_POLICY_PATH")
+    return pathlib.Path(override) if override else POLICY_PATH
+
+
+def create() -> Judge:
+    """`ports.py` factory (`app.firewall.judge:create`): Flash model pinned by M1 (A-16)."""
+    from app.config import get_settings
+    from app.db.engine import get_engine
+    from app.llm.budget import DailyBudget
+    from app.llm.gemini import GeminiClient
+
+    settings = get_settings()
+    if not settings.gemini_flash_model_id:
+        raise RuntimeError("AEGIS_GEMINI_FLASH_MODEL_ID is not set")
+    engine = get_engine()
+    client = GeminiClient(
+        settings.gemini_api_key.get_secret_value(),
+        DailyBudget(engine, settings.daily_llm_budget),
+        settings.gemini_embedding_model_id,
+    )
+    return Judge(client, settings.gemini_flash_model_id, policy_path())
