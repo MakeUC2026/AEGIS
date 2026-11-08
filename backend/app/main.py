@@ -19,6 +19,7 @@ from app.auth.verifier import make_verifier
 from app.classroom.router import router as classroom_router
 from app.config import Settings, get_settings
 from app.db.engine import make_engine
+from app.llm.budget import DailyBudget
 from app.quiz.router import router as quiz_router
 
 PART_ROUTERS: tuple[APIRouter, ...] = (
@@ -56,6 +57,7 @@ def create_app(
     app.state.settings = cfg
     app.state.engine = db
     app.state.verifier = make_verifier(cfg)
+    app.state.budget = DailyBudget(db, cfg.daily_llm_budget)
     app.add_middleware(ProxySecretMiddleware, secret=cfg.proxy_secret.get_secret_value())
 
     for router in (*PART_ROUTERS, *extra_routers):

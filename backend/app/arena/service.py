@@ -10,7 +10,7 @@ import json
 from typing import Any
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from app.arena.seed import new_secret
 from app.contracts.arena import (
@@ -233,61 +233,70 @@ class ArenaService:
 
     # --- Play helpers (M1 only, not part of the contract) ---------------------------------
 
-    async def record_win(self, session_id: str, message_id: str) -> bool:
+    async def record_win(
+        self, session_id: str, message_id: str, conn: AsyncConnection | None = None
+    ) -> bool:
+        """Record a delivered secret; joins `conn`'s transaction when given (atomic with the
+        turn's final status)."""
+        if conn is not None:
+            return await self._record_win(conn, session_id, message_id)
+        async with self._engine.begin() as own:
+            return await self._record_win(own, session_id, message_id)
+
+    async def _record_win(self, conn: AsyncConnection, session_id: str, message_id: str) -> bool:
         """Record a delivered secret (PRD §5.3, §6.4). True only the first time this session
         wins; the level's secret version is marked compromised by the first winner only."""
-        async with self._engine.begin() as conn:
-            session = (
-                (
-                    await conn.execute(
-                        text(
-                            "SELECT id, user_id, level_id, secret_version FROM arena_sessions"
-                            " WHERE id = CAST(:id AS uuid) FOR UPDATE"
-                        ),
-                        {"id": session_id},
-                    )
-                )
-                .mappings()
-                .one()
-            )
-            inserted = (
+        session = (
+            (
                 await conn.execute(
                     text(
-                        "INSERT INTO results (session_id, user_id, level_id, secret_version,"
-                        " message_id) VALUES (:s, :u, :l, :v, :m)"
-                        " ON CONFLICT (session_id) DO NOTHING RETURNING session_id"
+                        "SELECT id, user_id, level_id, secret_version FROM arena_sessions"
+                        " WHERE id = CAST(:id AS uuid) FOR UPDATE"
                     ),
-                    {
-                        "s": session["id"],
-                        "u": session["user_id"],
-                        "l": session["level_id"],
-                        "v": session["secret_version"],
-                        "m": message_id,
-                    },
+                    {"id": session_id},
                 )
-            ).first()
-            if inserted is None:
-                return False
-            await conn.execute(
-                text(
-                    "UPDATE arena_sessions SET secret_obtained_at = now() WHERE id = :s"
-                    " AND secret_obtained_at IS NULL"
-                ),
-                {"s": session["id"]},
             )
+            .mappings()
+            .one()
+        )
+        inserted = (
             await conn.execute(
                 text(
-                    "UPDATE secrets SET compromised_at = now(), compromised_by_user = :u,"
-                    " compromised_by_session = :s WHERE level_id = :l AND secret_version = :v"
-                    " AND compromised_at IS NULL"
+                    "INSERT INTO results (session_id, user_id, level_id, secret_version,"
+                    " message_id) VALUES (:s, :u, :l, :v, :m)"
+                    " ON CONFLICT (session_id) DO NOTHING RETURNING session_id"
                 ),
                 {
-                    "u": session["user_id"],
                     "s": session["id"],
+                    "u": session["user_id"],
                     "l": session["level_id"],
                     "v": session["secret_version"],
+                    "m": message_id,
                 },
             )
+        ).first()
+        if inserted is None:
+            return False
+        await conn.execute(
+            text(
+                "UPDATE arena_sessions SET secret_obtained_at = now() WHERE id = :s"
+                " AND secret_obtained_at IS NULL"
+            ),
+            {"s": session["id"]},
+        )
+        await conn.execute(
+            text(
+                "UPDATE secrets SET compromised_at = now(), compromised_by_user = :u,"
+                " compromised_by_session = :s WHERE level_id = :l AND secret_version = :v"
+                " AND compromised_at IS NULL"
+            ),
+            {
+                "u": session["user_id"],
+                "s": session["id"],
+                "l": session["level_id"],
+                "v": session["secret_version"],
+            },
+        )
         return True
 
 
