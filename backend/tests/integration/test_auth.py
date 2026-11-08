@@ -223,3 +223,53 @@ async def test_garbage_forwarded_for_and_fingerprint_are_dropped(client: AsyncCl
     )
     assert resp.json()["ip"] is None
     assert resp.json()["fingerprint_hash"] is None
+
+
+# --- Phase D DAST (ZAP 10021, 10049, 90004): security headers on every response --------
+
+SECURITY_HEADERS = {
+    "x-content-type-options": "nosniff",
+    "cross-origin-resource-policy": "same-origin",
+    "cache-control": "no-store",
+    "referrer-policy": "no-referrer",
+}
+
+
+async def test_security_headers_on_success_and_rejection(
+    client: AsyncClient, keys: DevKeys
+) -> None:
+    ok = await client.get("/api/me", headers=_bearer(keys, sub="auth0|hdr"))
+    del client.headers["x-aegis-proxy-secret"]
+    rejected = await client.get("/api/me")  # 401 from ProxySecretMiddleware itself
+    health = await client.get("/healthz")
+    assert (ok.status_code, rejected.status_code, health.status_code) == (200, 401, 200)
+    for resp in (ok, rejected, health):
+        for name, value in SECURITY_HEADERS.items():
+            assert resp.headers.get(name) == value, (resp.request.url, name)
+
+
+async def test_security_headers_on_unhandled_500(engine: AsyncEngine, keys: DevKeys) -> None:
+    # Starlette answers unhandled exceptions from ServerErrorMiddleware, outside every
+    # add_middleware entry, so the 500 handler must set the headers itself.
+    boom = APIRouter()
+
+    @boom.get("/api/boom")
+    async def _boom() -> None:
+        raise RuntimeError("boom")
+
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        AEGIS_AUTH_MODE="dev",
+        AEGIS_DEV_JWT_PUBLIC_KEY=keys.public_pem,
+        AEGIS_PROXY_SECRET=PROXY_SECRET,
+        DATABASE_URL="unused",
+    )
+    app = create_app(settings=settings, engine=engine, extra_routers=[boom])
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/api/boom", headers={"x-aegis-proxy-secret": PROXY_SECRET})
+    assert r.status_code == 500
+    assert r.json() == {"detail": "internal error"}
+    for name, value in SECURITY_HEADERS.items():
+        assert r.headers.get(name) == value, name

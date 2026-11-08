@@ -7,6 +7,7 @@ All SQL is parameterized (CONST-SEC-005). Every C8 write is audited in the same 
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
 from sqlalchemy import text
@@ -23,15 +24,43 @@ from app.contracts.arena import (
 from app.contracts.firewall import NotFound
 from app.db.audit import record_audit
 
-_SESSION_COLS = (
-    "id, user_id, level_id, level_version, mode, fw_session_id, manifest_id, secret_version,"
-    " status, secret_obtained_at, started_at, closed_at, admin_test, recap_unlocked_at"
+_GET_SESSION = (
+    "SELECT id, user_id, level_id, level_version, mode, fw_session_id, manifest_id,"
+    " secret_version, status, secret_obtained_at, started_at, closed_at, admin_test,"
+    " recap_unlocked_at FROM arena_sessions"
+    " WHERE id = CAST(:id AS uuid)"
 )
-_GET_SESSION = f"SELECT {_SESSION_COLS} FROM arena_sessions WHERE id = CAST(:id AS uuid)"  # noqa: S608
+_LIST_SESSIONS = (
+    "SELECT id, user_id, level_id, level_version, mode, fw_session_id, manifest_id,"
+    " secret_version, status, secret_obtained_at, started_at, closed_at, admin_test,"
+    " recap_unlocked_at FROM arena_sessions"
+    " WHERE (CAST(:user_id AS uuid) IS NULL OR user_id = CAST(:user_id AS uuid))"
+    " AND (CAST(:level_id AS text) IS NULL OR level_id = :level_id)"
+    " AND (CAST(:mode AS text) IS NULL OR mode = :mode)"
+    " AND (CAST(:status AS text) IS NULL OR status = :status)"
+    " AND (CAST(:admin_test AS boolean) IS NULL OR admin_test = :admin_test)"
+    " AND (CAST(:outcome AS text) IS NULL"
+    "      OR (:outcome = 'obtained' AND secret_obtained_at IS NOT NULL)"
+    "      OR (:outcome = 'not_obtained' AND secret_obtained_at IS NULL))"
+    " ORDER BY started_at DESC LIMIT :limit OFFSET :offset"
+)
 _LATEST_LEVELS = "SELECT DISTINCT ON (level_id) * FROM levels ORDER BY level_id, level_version DESC"
 _LATEST_SECRETS = (
     "SELECT DISTINCT ON (level_id) * FROM secrets ORDER BY level_id, secret_version DESC"
 )
+
+
+def _as_uuid(value: str) -> str | None:
+    """Caller-supplied IDs (M3/M4 take them from URLs): malformed means "matches nothing"."""
+    try:
+        return str(uuid.UUID(value))
+    except ValueError:
+        return None
+
+
+def _storable(*values: str | None) -> bool:
+    """Postgres text cannot hold NUL, so a value containing one can never match a row."""
+    return all(v is None or "\x00" not in v for v in values)
 
 
 def _session(row: Any) -> ArenaSession:
@@ -66,25 +95,21 @@ class ArenaService:
     # --- C4 -------------------------------------------------------------------------------
 
     async def list_sessions(self, filters: SessionFilters) -> list[ArenaSession]:
-        clauses, params = [], {"limit": filters.limit, "offset": filters.offset}
-        for col in ("user_id", "level_id", "mode", "status", "admin_test"):
-            value = getattr(filters, col)
-            if value is not None:
-                clauses.append(f"{col} = :{col}")
-                params[col] = value
-        if filters.outcome == "obtained":
-            clauses.append("secret_obtained_at IS NOT NULL")
-        elif filters.outcome == "not_obtained":
-            clauses.append("secret_obtained_at IS NULL")
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        sql = (
-            f"SELECT {_SESSION_COLS} FROM arena_sessions {where}"  # noqa: S608 - fixed column names
-            " ORDER BY started_at DESC LIMIT :limit OFFSET :offset"
-        )
+        params = filters.model_dump(include={"user_id", "level_id", "mode", "status", "admin_test",
+                                             "outcome", "limit", "offset"})  # fmt: skip
+        if not _storable(filters.user_id, filters.level_id):
+            return []
+        if filters.user_id is not None:
+            params["user_id"] = _as_uuid(filters.user_id)
+            if params["user_id"] is None:
+                return []
         async with self._engine.connect() as conn:
-            return [_session(r) for r in (await conn.execute(text(sql), params)).mappings()]
+            rows = (await conn.execute(text(_LIST_SESSIONS), params)).mappings()
+            return [_session(r) for r in rows]
 
     async def get_session(self, session_id: str) -> ArenaSession | None:
+        if _as_uuid(session_id) is None:
+            return None
         async with self._engine.connect() as conn:
             row = (
                 (
@@ -107,6 +132,8 @@ class ArenaService:
 
     async def save_level_version(self, update: LevelConfigUpdate, actor: str) -> LevelSummary:
         changes = update.model_dump(exclude={"level_id"}, exclude_none=True)
+        if not _storable(update.level_id):
+            raise NotFound(update.level_id)
         async with self._engine.begin() as conn:
             current = (
                 (
@@ -175,6 +202,8 @@ class ArenaService:
         return _level(row)
 
     async def rotate_secret(self, level_id: str, actor: str) -> SecretStatus:
+        if not _storable(level_id):
+            raise NotFound(level_id)
         async with self._engine.begin() as conn:
             prior = (
                 await conn.execute(
@@ -222,6 +251,8 @@ class ArenaService:
             return [_secret_status(r) for r in rows]
 
     async def unlock_recap(self, session_id: str) -> None:
+        if _as_uuid(session_id) is None:
+            return  # same as an unknown session: nothing to unlock
         async with self._engine.begin() as conn:
             await conn.execute(
                 text(

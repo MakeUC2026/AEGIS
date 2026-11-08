@@ -94,7 +94,8 @@ def _fake(name: str) -> Any:
 def _real(name: str) -> Any:
     module_name, _, attr = REAL_FACTORIES[name].partition(":")
     try:
-        module = importlib.import_module(module_name)
+        # module_name comes only from the constant REAL_FACTORIES allowlist, never from input.
+        module = importlib.import_module(module_name)  # nosemgrep: non-literal-import
     except ModuleNotFoundError as exc:
         raise PortUnavailable(
             f"seam {name!r}: {module_name} is not on this branch; add {name!r} to AEGIS_USE_FAKES"

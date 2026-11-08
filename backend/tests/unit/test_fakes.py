@@ -237,3 +237,14 @@ async def test_arena_service_fake_records_unlock() -> None:
     arena = FakeArenaService()
     await arena.unlock_recap("00000000-0000-0000-0000-000000000001")
     assert arena.unlocked == ["00000000-0000-0000-0000-000000000001"]
+
+
+async def test_fake_ids_unique_across_instances() -> None:
+    # Regression (Phase D Playwright): a restarted API process got a fresh FakeFirewall whose
+    # counter reissued fws-fake-1, colliding with arena_sessions.fw_session_id UNIQUE -> 500.
+    a, b = FakeFirewall(), FakeFirewall()
+    ha = await a.register_session(_register_req())
+    hb = await b.register_session(_register_req())
+    assert ha.fw_session_id != hb.fw_session_id
+    assert ha.manifest_id != hb.manifest_id
+    assert ha.fw_session_id.startswith("fws-fake-")

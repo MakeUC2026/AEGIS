@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.arena.play import ArenaError, ArenaPlay
 from app.auth.deps import client_meta, require_role
@@ -17,6 +17,7 @@ router = APIRouter(prefix="/api/arena", tags=["arena"])
 Player = Annotated[CurrentUser, Depends(require_role("student", "firewall_admin"))]
 
 MESSAGE_ID_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
+MAX_TICKET_ID_CHARS = 128
 MAX_TEXT_CHARS = 16000  # transport bound only; the arena never truncates (M1-X23)
 
 
@@ -27,6 +28,14 @@ class StartIn(BaseModel):
 class MessageIn(BaseModel):
     message_id: str = Field(pattern=MESSAGE_ID_PATTERN)
     text: str = Field(min_length=1, max_length=MAX_TEXT_CHARS)
+
+    @field_validator("text")
+    @classmethod
+    def _no_nul(cls, v: str) -> str:
+        # Postgres text cannot store NUL; refuse (422) rather than alter the text (M1-X23).
+        if "\x00" in v:
+            raise ValueError("text must not contain NUL characters")
+        return v
 
 
 def get_play(request: Request) -> ArenaPlay:
@@ -77,6 +86,8 @@ async def send(
 
 @router.get("/sessions/{session_id}/tickets/{ticket_id}")
 async def ticket(session_id: str, ticket_id: str, user: Player, play: Play) -> dict:
+    if "\x00" in ticket_id or len(ticket_id) > MAX_TICKET_ID_CHARS:
+        raise HTTPException(status_code=404, detail="ticket not found")
     return await _run(play.check_ticket(user, _uuid(session_id), ticket_id))
 
 

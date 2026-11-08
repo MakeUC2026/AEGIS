@@ -8,7 +8,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.admin.router import router as admin_router
@@ -21,6 +22,7 @@ from app.config import Settings, get_settings
 from app.db.engine import make_engine
 from app.llm.budget import DailyBudget
 from app.quiz.router import router as quiz_router
+from app.security_headers import SECURITY_HEADERS, SecurityHeadersMiddleware
 
 PART_ROUTERS: tuple[APIRouter, ...] = (
     identity_router,
@@ -59,6 +61,15 @@ def create_app(
     app.state.verifier = make_verifier(cfg)
     app.state.budget = DailyBudget(db, cfg.daily_llm_budget)
     app.add_middleware(ProxySecretMiddleware, secret=cfg.proxy_secret.get_secret_value())
+    # Added last, so it is outermost and also stamps ProxySecretMiddleware's 401s.
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    @app.exception_handler(Exception)
+    async def unhandled(_: Request, __: Exception) -> JSONResponse:
+        # Runs in ServerErrorMiddleware, outside every add_middleware entry, so it sets the
+        # security headers itself. The body never echoes the exception.
+        headers = {k.decode(): v.decode() for k, v in SECURITY_HEADERS}
+        return JSONResponse({"detail": "internal error"}, status_code=500, headers=headers)
 
     for router in (*PART_ROUTERS, *extra_routers):
         app.include_router(router)
