@@ -1,4 +1,5 @@
-"""Gemini REST client: structured JSON output and 768-d embeddings (PRD §3.2, D-15).
+"""Gemini REST client: the arena bot (chat with tools), structured JSON output and 768-d
+embeddings (PRD §3.2, D-15 as revised: Gemini replaces Grok as the bot).
 
 The API key travels in the `x-goog-api-key` header, never in the URL (so it never lands
 in access logs). Every call is charged to the global daily budget first.
@@ -11,11 +12,13 @@ from typing import Any, Protocol
 
 import httpx
 
-from app.llm.base import EMBEDDING_DIMENSIONS, LLMError, LLMTimeout
+from app.llm.base import EMBEDDING_DIMENSIONS, ChatMessage, ChatResult, LLMError, LLMTimeout
+from app.llm.gemini_chat import build_request, parse_response
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 DEFAULT_JSON_TIMEOUT_S = 30.0
 DEFAULT_EMBED_TIMEOUT_S = 2.0
+DEFAULT_CHAT_TIMEOUT_S = 30.0
 
 
 class Budget(Protocol):
@@ -85,6 +88,18 @@ class GeminiClient:
         if not isinstance(values, list) or len(values) != EMBEDDING_DIMENSIONS:
             raise LLMError("gemini embedding has the wrong shape")
         return [float(v) for v in values]
+
+    async def chat_with_tools(
+        self,
+        model: str,
+        messages: list[ChatMessage],
+        tools: list[dict[str, Any]],
+        timeout_s: float = DEFAULT_CHAT_TIMEOUT_S,
+    ) -> ChatResult:
+        """The arena bot (PRD D-15 revised): function calling via generateContent."""
+        body = build_request(messages, tools)
+        data = await self._post(f"/models/{model}:generateContent", body, timeout_s)
+        return parse_response(data)
 
     async def aclose(self) -> None:
         await self._http.aclose()

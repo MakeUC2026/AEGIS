@@ -41,7 +41,7 @@ META = ClientMeta(ip=None, user_agent=None, fingerprint_hash=None)
 def _register_req(owner: str = OWNER) -> RegisterSession:
     return RegisterSession(
         owner_ref=owner,
-        agent=AgentDefinition(system_prompt="p", tools=[], model_id="grok-test"),
+        agent=AgentDefinition(system_prompt="p", tools=[], model_id="gemini-bot-test"),
         level=LevelConfig(
             level_id="lvl-2",
             level_version=1,
@@ -161,7 +161,7 @@ async def test_close_expires_pending_ticket_and_rejects_messages() -> None:
 async def test_scripted_exception_is_raised_and_claim_released() -> None:
     fw = FakeFirewall()
     sid = await _session(fw)
-    fw.script(BotUnavailable("grok down"))
+    fw.script(BotUnavailable("bot model down"))
     with pytest.raises(BotUnavailable):
         await fw.send_message(OWNER, sid, "m1", "x", META)
     # retry with the same message id succeeds (claim released)

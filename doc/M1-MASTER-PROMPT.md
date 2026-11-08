@@ -2,7 +2,7 @@
 
 I want to implement a project called **Injection Arena (repo: AEGIS)**, a security-education
 platform for MakeUC 2026 with two subsystems. Subsystem 1, the Arena, lets students attack a
-tool-calling company chatbot (Grok) at three levels (Off, Basic, Strict) behind an Agent
+tool-calling company chatbot (Gemini) at three levels (Off, Basic, Strict) behind an Agent
 Firewall Framework (AFF) that scores every input, tool call and reply and decides Allow, Deny,
 Review or Divert. Subsystem 2, the Classroom, lets teachers review sessions and gives students
 an AI-generated quiz. The full PRD is at `doc/PRD-Injection-Arena-Unified.md`. Read it in full
@@ -47,11 +47,11 @@ Work through the plan phase by phase. For each step:
    done **and** tested, `[~]` in progress, `[!]` blocked with the reason), add a Progress log row
    at each gate, and add a **Design decisions** entry wherever the PRD left an implementation
    detail open. Examples: field-level shapes of the contract additions in M1 §3.1, exact UI copy
-   not given in PRD §6.2, the Grok system prompt wording, seed dataset contents, the dev
+   not given in PRD §6.2, the bot system prompt wording, seed dataset contents, the dev
    authentication mode, and polling intervals.
 
 **External accounts.** Some items need credentials this machine may not have: the Auth0 tenant
-(A-07), Vercel, Railway and Tiger Cloud deploys (A-14), the Grok gullibility smoke test (A-15)
+(A-07), Vercel, Railway and Tiger Cloud deploys (A-14), the bot gullibility smoke test (A-15)
 and pinned model IDs (A-16). Build and test everything on the code side locally (a local JWKS
 for token verification, `ScriptedLLM` for models, a TimescaleDB container for the database),
 then mark these items `[!]` with exactly what is needed from the user. Never report one of them

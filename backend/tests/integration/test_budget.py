@@ -17,7 +17,7 @@ async def test_budget_counts_and_stops_at_limit(engine: AsyncEngine) -> None:
         await budget.spend("gemini")
     assert await budget.remaining() == 0
     with pytest.raises(BudgetExhausted):
-        await budget.spend("xai")
+        await budget.spend("gemini")
 
 
 async def test_budget_is_safe_under_concurrency(engine: AsyncEngine) -> None:

@@ -40,9 +40,8 @@ class Settings(BaseSettings):
     aff_timeout_s: float = Field(default=AFF_TIMEOUT_S, alias="AEGIS_AFF_TIMEOUT_S")
 
     # Models (pinned at G0, PRD §18.2)
-    xai_api_key: SecretStr = Field(default=SecretStr(""), alias="XAI_API_KEY")
     gemini_api_key: SecretStr = Field(default=SecretStr(""), alias="GEMINI_API_KEY")
-    grok_model_id: str = Field(default="", alias="AEGIS_GROK_MODEL_ID")
+    bot_model_id: str = Field(default="", alias="AEGIS_BOT_MODEL_ID")  # Gemini, the arena bot
     gemini_flash_model_id: str = Field(default="", alias="AEGIS_GEMINI_FLASH_MODEL_ID")
     gemini_pro_model_id: str = Field(default="", alias="AEGIS_GEMINI_PRO_MODEL_ID")
     gemini_embedding_model_id: str = Field(default="", alias="AEGIS_GEMINI_EMBEDDING_MODEL_ID")

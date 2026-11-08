@@ -1,5 +1,6 @@
 """Model-client interfaces shared by M2 (bot runner, decoys), M3 (judge, forensics,
-embeddings) and M4 (quiz). Real clients: `gemini.py`, `xai.py`. Test stub: `scripted.py`.
+embeddings) and M4 (quiz). Real client: `gemini.py` (bot, JSON, embeddings).
+Test stub: `scripted.py`.
 """
 
 from __future__ import annotations
@@ -18,7 +19,9 @@ class _Frozen(BaseModel):
 class ToolCall(_Frozen):
     id: str
     name: str
-    arguments: dict[str, Any] | str  # str when the model sent JSON we could not parse
+    arguments: dict[str, Any] | str  # str when the model sent arguments we could not parse
+    # Gemini "thoughtSignature": must be sent back with the call on the next turn.
+    signature: str | None = None
 
 
 class ChatMessage(_Frozen):

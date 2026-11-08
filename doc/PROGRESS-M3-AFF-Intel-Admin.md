@@ -51,7 +51,7 @@ All shapes are Pydantic v2 models in `backend/app/contracts/` (PRD D-16, §14). 
 | C6 AFF admin operations (new) | `contracts/firewall_admin.py` | `app/firewall/admin_api.py` (M2) | M3 | `FakeFirewallAdmin` |
 | C7 Sentinel plug-ins (new) | `contracts/sentinel.py` (`RiskyHistoryPort`, `JudgePort`) | `app/firewall/risky_history.py`, `app/firewall/judge.py` (M3) | M2 | `InMemoryRiskyHistory`, `StubJudge` |
 | C8 Arena admin and teacher operations (new) | `contracts/arena.py` | `app/arena/service.py` (M1) | M3 (Levels screen), M4 (secrets, quiz) | `FakeArenaService` |
-| LLM clients | `app/llm/` (`GeminiClient.generate_json`, `GeminiClient.embed`, `XaiClient.chat_with_tools`, `ScriptedLLM`) | M1 | M2, M3, M4 | `ScriptedLLM` replays scripted answers |
+| LLM clients | `app/llm/` (`GeminiClient.chat_with_tools` (the bot), `GeminiClient.generate_json`, `GeminiClient.embed`, `ScriptedLLM`) | M1 | M2, M3, M4 | `ScriptedLLM` replays scripted answers |
 | Audit | `app/db/audit.py::record_audit(conn, *, actor_id, entity, entity_id, action, before, after)` (joins the caller's transaction; refuses secret values) | M1 | all | writes to the real table, or to an in-memory list in unit tests |
 
 **Wiring.** `app/firewall/ports.py` (M1) returns the real or the fake implementation of each seam. The env var `AEGIS_USE_FAKES` takes a comma list (`firewall,read,admin,risky,judge,arena`). Each machine's branch sets only what it lacks. At integration the value is empty.
@@ -93,7 +93,7 @@ All shapes are Pydantic v2 models in `backend/app/contracts/` (PRD D-16, §14). 
 | I-3 | Only `player_view` reaches the browser. `facts`, judge reasons, tool arguments, blocked text and trace-back data never do | §15.1, §6.2 |
 | I-4 | Every route checks roles on the server with `require_user` and `require_role`. Hidden buttons are never the control | §4.1, C5 |
 | I-5 | Synthetic secrets only; Gitleaks clean; `.env` never committed | §15.2 |
-| I-6 | Tests are deterministic: Grok and Gemini are stubbed with `ScriptedLLM`. The real-model attack suite is reported, not gated | §16.1 |
+| I-6 | Tests are deterministic: the Gemini bot and security models are stubbed with `ScriptedLLM`. The real-model attack suite is reported, not gated | §16.1 |
 | I-7 | A session is pinned to its manifest. Config, rule, pattern, level and secret changes affect new sessions only | §5.2, §7.5, §15.1 |
 
 ### 0.8 How to report progress

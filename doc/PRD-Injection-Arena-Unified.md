@@ -6,7 +6,7 @@
 | Date | Nov 7, 2026 |
 | Event | MakeUC 2026, 24-hour build, Security and Education tracks |
 | Owners | Arena and Level Blueprint: `<TBD>` · Agent Firewall Framework: `<TBD>`, risky history lookup: Hank · Classroom (auth, dashboard, quiz): Nhật + Châu |
-| Sponsor tech | Auth0, Gemini API, Grok (xAI), Tiger Data |
+| Sponsor tech | Auth0, Gemini API, Tiger Data |
 | Hosting | Vercel (Next.js), Railway (FastAPI and workers), Tiger Cloud (database). Laptop Docker Compose as offline fallback |
 | Privacy rule | Synthetic secrets only (for example `DEMO_TOKEN_42`). No real credentials or real student data in fixtures, logs or screenshots |
 
@@ -35,7 +35,7 @@ These resolve every conflict between the three v2 PRDs and the whiteboard. Anyth
 | D-12 | Forensics and drafts | In scope. An async worker analyzes each non-allow event and drafts a rule or pattern. Drafts are never applied without admin approval |
 | D-13 | Quiz | Generated per session: multiple choice plus free response with 2 to 3 follow-ups each, as JSON |
 | D-14 | App shape | One Next.js app on Vercel, one FastAPI app plus worker on Railway, one Tiger Data database. Tabs by role: Student, Teacher, Firewall Admin |
-| D-15 | Models | Grok (xAI) is the attacked arena bot. Gemini is the judge, forensics, drafts, decoys and the quiz. Different vendors, so one trick is less likely to fool both |
+| D-15 | Models | **Revised Nov 7, 2026: Gemini is the attacked arena bot (replaces Grok/xAI).** Gemini is also the judge, forensics, drafts, decoys and the quiz. Bot and security models are now the same vendor, so the original "different vendors" protection is gone. Mitigations: deterministic rules stay the boundary, the judge can only raise the score, the bot and the judge run as different models with different prompts, and the judge only sees content as delimited data (§7.3, §15.3) |
 | D-16 | Contracts | One Pydantic package `backend/app/contracts/` is the only shared interface (section 14) |
 
 ---
@@ -117,7 +117,7 @@ flowchart LR
         WK[workers/ forensics + drafts]
     end
     DB[(Tiger Data Postgres<br/>hypertables, pgvector)]
-    Grok[Grok API<br/>attacked bot]
+    Bot[Gemini API<br/>attacked bot]
     Gem[Gemini API<br/>judge, forensics, decoy, quiz]
     Loc[PromptGuard 2 on CPU<br/>in-container, stretch]
 
@@ -125,7 +125,7 @@ flowchart LR
     S & T & A --> API
     AR --> FW
     AD --> FW
-    FW --> Grok
+    FW --> Bot
     FW --> Gem
     FW -.-> Loc
     FW --> DB
@@ -141,7 +141,7 @@ flowchart LR
 | Technology | Used for | Notes |
 | --- | --- | --- |
 | **Auth0** | Sign-in and sign-up for everyone. Roles `teacher` and `firewall_admin` in the access token claim `https://aegis/roles`; no role means `student`. Next.js uses `@auth0/nextjs-auth0` v4, FastAPI verifies tokens with `auth0-api-python` | Stretch: Auth0 for AI Agents asynchronous authorization (CIBA) sends Review tickets as a push approval to the on-duty firewall admin. Confirm the tenant plan supports it before building |
-| **Grok (xAI API)** | The attacked arena bot, with tool calling | The xAI API is OpenAI-compatible, so the bot runner uses a thin adapter. Pin the exact model ID in the manifest. Test Off early: the system prompt may need to be deliberately gullible |
+| **Gemini as the bot** | The attacked arena bot, with function calling (`generateContent` with `functionDeclarations`) | Revised Nov 7, 2026 (D-15): replaces Grok. Pin the exact bot model ID in the manifest, separate from the judge model. Test Off early: the system prompt may need to be deliberately gullible |
 | **Gemini API** | Strict-mode judge, forensic analysis, draft improvements, decoy generation, quiz generation, classmate follow-ups, free-response grader, feedback writer | Use structured output (response schema) for every JSON answer. A Flash-tier model for the judge (latency), a Pro-tier model for forensics and grading if budget allows |
 | **Vercel** | Hosts the Next.js app: landing, arena, classroom, quiz and admin tabs. Native Next.js support, preview deploys per branch, HTTPS domain for Auth0 callbacks | Server-side route handlers forward the Auth0 access token and the client IP (`x-forwarded-for`) to FastAPI. No long-running work runs on Vercel |
 | **Railway** | Hosts the FastAPI app and the forensics worker as two long-running services from one Dockerfile | Long-running processes are needed for Postgres `LISTEN/NOTIFY`, ticket expiry and the worker, which serverless functions do not suit. Render or Fly.io are drop-in alternatives |
@@ -222,7 +222,7 @@ A user can hold both teacher and firewall admin. Role checks run on the server o
 | Field | Contents |
 | --- | --- |
 | Company profile | Fictional company, departments, bot tone |
-| Bot definition | System prompt and persona for Grok; tools with JSON schemas and `high_risk` flags |
+| Bot definition | System prompt and persona for the Gemini bot; tools with JSON schemas and `high_risk` flags |
 | Fake dataset | Documents, emails, DB rows the bot can read, including one poisoned document with hidden instructions |
 | Tools (all mocks) | `search_docs`, `read_file`, `send_email` (high risk), `query_db` (high risk), `run_shell` (high risk, mock filesystem only) |
 | Attacker mailbox | External address whose mail appears in the student's tool-output view |
@@ -320,7 +320,7 @@ The student wins when the level secret is delivered to them, in a reply or a rea
 5. **Forensics.** The admin opens Drafts: a Gemini-drafted rule for the split attack. Approve it, start a new Basic session, the split attack is now blocked.
 6. **Teacher.** Session list, compromised Off secret, the divert with what the student believed they got. Launch a quiz; the student explains; the grade appears.
 
-Rehearse against the real Grok and Gemini models. Record a backup video.
+Rehearse against the real Gemini models (bot and security). Record a backup video.
 
 ---
 
@@ -470,7 +470,7 @@ Carried over from the AFF v0.3 PRD, unchanged in substance.
 | All arguments of one call | 4,000 characters |
 | One reply | 4,000 characters |
 | Tool-call rounds per turn | 5 |
-| History sent to Grok | Last 20 messages |
+| History sent to the bot model | Last 20 messages |
 | Player-visible output per session (cumulative scan) | 50,000 characters |
 
 In Basic and Strict, oversized input is denied, never truncated before checks. In Off it is truncated and logged. Checks always use the full session record, not the trimmed model history.
@@ -839,7 +839,7 @@ class ToolDef(BaseModel):
 class AgentDefinition(BaseModel):
     system_prompt: str
     tools: list[ToolDef]
-    model_id: str                      # Grok model ID
+    model_id: str                      # bot model ID (Gemini)
 
 class LevelConfig(BaseModel):
     level_id: str
@@ -947,7 +947,7 @@ Nobody writes another part's tables. Classroom reads only through C3 and C4.
 | Reproducibility | Immutable session manifest: agent definition, model IDs, level config, rule version, pattern table version, judge policy hash, thresholds, weights. Replaying recorded proposals, judge answers and review outcomes gives identical decisions |
 | Performance | Rules under 50 ms p95. Risky history lookup under 50 ms p95. Judge timeout 8 s. Arena timeout before "not sent" 30 s |
 | Information flow | Only `player_view` reaches the browser. Judge reasons, tool arguments, blocked text, trace-back data never do |
-| Cost | 30 messages per student per hour, global daily budget for Grok and Gemini |
+| Cost | 30 messages per student per hour, global daily budget for Gemini model calls |
 | Hosting | Next.js on Vercel, FastAPI and worker on Railway, Tiger Cloud database. FastAPI accepts calls only from the Next.js server. Auth0 callback URLs set for the Vercel domain and localhost. Laptop Docker Compose as fallback |
 | Code style | Python with type hints, Pydantic v2, Ruff, pytest. TypeScript strict in Next.js |
 
@@ -975,7 +975,7 @@ Nobody writes another part's tables. Classroom reads only through C3 and C4.
 
 ### 16.1 Approach
 
-Unit tests for canonicalization, rules, score calculation, thresholds, risky history, secret scans, decoy scan. Integration tests use a stub Grok and stub Gemini that replay scripted answers, so they are deterministic. Concurrency tests on claims and tickets. The attack suite against real models is reported, not gated.
+Unit tests for canonicalization, rules, score calculation, thresholds, risky history, secret scans, decoy scan. Integration tests use stub Gemini models (bot and security) that replay scripted answers, so they are deterministic. Concurrency tests on claims and tickets. The attack suite against real models is reported, not gated.
 
 ### 16.2 Edge cases (each is a required test)
 
@@ -1087,15 +1087,16 @@ gantt
 
 | Risk | Probability | Impact | Mitigation |
 | --- | --- | --- | --- |
-| Grok resists naive attacks, Off is not crackable | Medium | High | Test at hour 3; deliberately gullible system prompt for the scenario |
+| The Gemini bot resists naive attacks, Off is not crackable | Medium | High | Test at hour 3; deliberately gullible system prompt for the scenario |
 | Gemini judge is injected | High | High | Can only raise score; rules are the boundary |
+| Bot and judge share a vendor (D-15 revised), so one trick may fool both | Medium | Medium | Rules decide, judge only raises, different bot and judge models and prompts, judge sees delimited data only |
 | Divert deceives a benign user | Low | Medium | Top score band only, never from human review; recap reveals it after the session |
 | Railway or Vercel down at the demo | Low | High | Laptop Docker Compose fallback; recorded backup video |
 | Client IP lost through the Next.js proxy | Medium | Low | Route handler forwards `x-forwarded-for`; test on the deployed URL at gate 0 |
 | Trace-back conflicts with school privacy rules | Medium | Medium | Notice at sign-up, hashed IP, 30-day retention, admin-only access |
 | Thresholds over-block benign tasks | Medium | High | Benign fixtures; thresholds editable per level; benign failure rate reported |
 | Tiger Cloud or network down at the demo | Low | High | Local TimescaleDB fallback with same migrations; recorded backup video |
-| API latency stacks (Grok + Gemini judge per stage) | Medium | Medium | Flash-tier judge, 8 s timeout, judge only on items scoring 20 or more in Strict |
+| API latency stacks (bot + judge model calls per stage) | Medium | Medium | Flash-tier judge, 8 s timeout, judge only on items scoring 20 or more in Strict |
 | Contract drift between parts | Medium | High | One contracts package, frozen at gate 1, fakes in the same shapes |
 | Nobody staffs the review queue | Medium | Low | Named on-duty admin during the demo; expiry denies |
 
@@ -1103,7 +1104,7 @@ gantt
 
 | Question | Default if unanswered |
 | --- | --- |
-| Exact Grok and Gemini model IDs | Chosen at gate 0, pinned in the manifest |
+| Exact Gemini model IDs (bot, judge, forensics, embeddings) | Chosen at gate 0, pinned in the manifest |
 | Final signal weights and thresholds | Section 7.3 and 7.4 values, tuned on the development split only |
 | Run the judge on every Strict item or only above a score floor | Only items scoring 20 or more, to save latency |
 | Embedding model and dimension | Gemini text embeddings, 768 dimensions |
@@ -1151,7 +1152,7 @@ gantt
 | Human "not ok" | AFF: deny. Whiteboard: divert | Human Deny, its own status (D-03a) |
 | Quiz | Teach-back conversation only | MCQ + free response with follow-ups (D-13) |
 | Admin config | None for levels | Levels screen with weights and thresholds (section 11) |
-| Bot model | Blueprint: Gemini. Whiteboard: Claude | Grok bot, Gemini for security and quiz (D-15) |
+| Bot model | Blueprint: Gemini. Whiteboard: Claude | Gemini bot (revised from Grok), Gemini for security and quiz (D-15) |
 | Database | AFF: local Postgres 16 | Tiger Data with hypertables and pgvector |
 | Hosting | Laptop | Vercel + Railway + Tiger Cloud, laptop as fallback |
 | Interface | 5 vs 7 exchanges, mismatched fields | One contracts package (section 14) |

@@ -33,7 +33,7 @@ class ToolDef(Contract):
 class AgentDefinition(Contract):
     system_prompt: str
     tools: list[ToolDef]
-    model_id: str  # Grok model ID
+    model_id: str  # bot model ID (Gemini, PRD D-15 as revised)
 
 
 class LevelConfig(Contract):

@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Machine | **M2** |
-| Stream | Agent Firewall Framework core: canonical tool calls, mock tools, bot runner (Grok), rules engine, Sentinel layer 1, Gatekeeper, Review, Divert, decoy, trace-back, leak detection, event store, C2, C3 and C6 interfaces |
+| Stream | Agent Firewall Framework core: canonical tool calls, mock tools, bot runner (Gemini), rules engine, Sentinel layer 1, Gatekeeper, Review, Divert, decoy, trace-back, leak detection, event store, C2, C3 and C6 interfaces |
 | Branch | `m2/aff-core` |
 | Source of truth | [PRD-Injection-Arena-Unified.md](PRD-Injection-Arena-Unified.md) (PRD v3.1). When this doc and the PRD disagree, the PRD wins unless the PRD leaves the point open. Then this doc's §0 decides |
 | Sibling docs | [M1 Foundation and Arena](PROGRESS-M1-Foundation-Arena.md) · [M3 AFF Intel and Admin](PROGRESS-M3-AFF-Intel-Admin.md) · [M4 Classroom](PROGRESS-M4-Classroom.md) |
@@ -51,7 +51,7 @@ All shapes are Pydantic v2 models in `backend/app/contracts/` (PRD D-16, §14). 
 | C6 AFF admin operations (new) | `contracts/firewall_admin.py` | `app/firewall/admin_api.py` (M2) | M3 | `FakeFirewallAdmin` |
 | C7 Sentinel plug-ins (new) | `contracts/sentinel.py` (`RiskyHistoryPort`, `JudgePort`) | `app/firewall/risky_history.py`, `app/firewall/judge.py` (M3) | M2 | `InMemoryRiskyHistory`, `StubJudge` |
 | C8 Arena admin and teacher operations (new) | `contracts/arena.py` | `app/arena/service.py` (M1) | M3 (Levels screen), M4 (secrets, quiz) | `FakeArenaService` |
-| LLM clients | `app/llm/` (`GeminiClient.generate_json`, `GeminiClient.embed`, `XaiClient.chat_with_tools`, `ScriptedLLM`) | M1 | M2, M3, M4 | `ScriptedLLM` replays scripted answers |
+| LLM clients | `app/llm/` (`GeminiClient.chat_with_tools` (the bot), `GeminiClient.generate_json`, `GeminiClient.embed`, `ScriptedLLM`) | M1 | M2, M3, M4 | `ScriptedLLM` replays scripted answers |
 | Audit | `app/db/audit.py::record_audit(conn, *, actor_id, entity, entity_id, action, before, after)` (joins the caller's transaction; refuses secret values) | M1 | all | writes to the real table, or to an in-memory list in unit tests |
 
 **Wiring.** `app/firewall/ports.py` (M1) returns the real or the fake implementation of each seam. The env var `AEGIS_USE_FAKES` takes a comma list (`firewall,read,admin,risky,judge,arena`). Each machine's branch sets only what it lacks. At integration the value is empty.
@@ -93,7 +93,7 @@ All shapes are Pydantic v2 models in `backend/app/contracts/` (PRD D-16, §14). 
 | I-3 | Only `player_view` reaches the browser. `facts`, judge reasons, tool arguments, blocked text and trace-back data never do | §15.1, §6.2 |
 | I-4 | Every route checks roles on the server with `require_user` and `require_role`. Hidden buttons are never the control | §4.1, C5 |
 | I-5 | Synthetic secrets only; Gitleaks clean; `.env` never committed | §15.2 |
-| I-6 | Tests are deterministic: Grok and Gemini are stubbed with `ScriptedLLM`. The real-model attack suite is reported, not gated | §16.1 |
+| I-6 | Tests are deterministic: the Gemini bot and security models are stubbed with `ScriptedLLM`. The real-model attack suite is reported, not gated | §16.1 |
 | I-7 | A session is pinned to its manifest. Config, rule, pattern, level and secret changes affect new sessions only | §5.2, §7.5, §15.1 |
 
 ### 0.8 How to report progress
@@ -109,7 +109,7 @@ M2 builds the `app/firewall/` package: the layer the model cannot talk its way p
 **In scope**
 
 - Session registration and the immutable manifest. Message claims, idempotency and concurrency.
-- Bot runner with the Grok adapter (through M1's `XaiClient`), history window, and tool-call rounds.
+- Bot runner on Gemini function calling (through M1's `GeminiClient.chat_with_tools`), history window, and tool-call rounds.
 - Canonical tool calls: schema validation, normalization, `call_id`, canonical hash. Mock tools over `fw_mock_state`.
 - Rules engine (RE2, field-typed operators, versioning, 50 ms cap) and seeding the starting rules R-001 to R-006 and B-01 to B-04.
 - Sentinel layer 1, the score combiner (layers 1 + 2 + judge, "only raise"), hard overrides, the Gatekeeper bands, strictest-wins.
@@ -163,7 +163,7 @@ M2 builds the `app/firewall/` package: the layer the model cannot talk its way p
 | --- | --- | --- |
 | M3 (C7) | `RiskyHistoryPort.lookup(item) -> RiskyHistorySignals`, `record_behavior(record, conn)`, `add_candidate(candidate, conn)`, `current_pattern_version()` | `InMemoryRiskyHistory` |
 | M3 (C7) | `JudgePort.assess(item) -> JudgeVerdict` (raises `JudgeTimeout` or `JudgeError`), `policy_hash()`, `model_id()` | `StubJudge` (scripted risk, or scripted timeout) |
-| M1 | `XaiClient.chat_with_tools`, `GeminiClient.generate_json` (decoys), `ScriptedLLM`, `record_audit`, `ClientMeta` | Ready at G0 |
+| M1 | `GeminiClient.chat_with_tools` (bot), `GeminiClient.generate_json` (decoys), `ScriptedLLM`, `record_audit`, `ClientMeta` | Ready at G0 |
 
 ### 3.3 C7 shapes M2 relies on (M1 writes them; M2 and M3 review before G1)
 
@@ -186,7 +186,7 @@ M2 builds the `app/firewall/` package: the layer the model cannot talk its way p
 Everything here is pure Python with unit tests. It needs no DB and no contracts beyond local dataclasses, which you swap for the contract models after rebasing on G0.
 
 - [ ] A-01 Canonicalizer (PRD §7.6): exact tool name match, JSON schema validation (unknown tool, wrong type, missing or extra field gives Deny), email recipient parsing, path resolution inside the mock filesystem (B-03), NFKC text, `call_id`, SHA-256 of the canonical form.
-- [ ] A-02 Limits (PRD §7.6): player text 4,000; one tool result 8,000; all arguments of one call 4,000; one reply 4,000; 5 tool-call rounds; last 20 messages to Grok; 50,000 characters of cumulative visible output. Basic and Strict deny oversized items. Off truncates and logs.
+- [ ] A-02 Limits (PRD §7.6): player text 4,000; one tool result 8,000; all arguments of one call 4,000; one reply 4,000; 5 tool-call rounds; last 20 messages to the bot model; 50,000 characters of cumulative visible output. Basic and Strict deny oversized items. Off truncates and logs.
 - [ ] A-03 Text normalizer for matching (PRD §9.1): NFKC, zero-width and control characters removed, case-folded.
 - [ ] A-04 Secret scanners (PRD §9.3, B-01, B-04): exact; normalized (case, spacing, zero-width, reversed, base64, hex, URL encoding); cumulative over the joined visible output plus the new item; echo exclusion (student typed the secret, or 8 or more consecutive characters of it, earlier in the session, compared after normalization).
 - [ ] A-05 Rules engine (PRD §9.1): fields (applies on, checks, condition, action, weight 5–60, ATLAS tag, note); only operators valid for the field type; RE2 regex (`google-re2`); 50 ms cap per rule evaluation; error or timeout returns a `RuleError` that maps to Deny in Basic and Strict.
@@ -200,7 +200,7 @@ Everything here is pure Python with unit tests. It needs no DB and no contracts 
 - [ ] B-03 Event writer: one row per check per stage, in every mode, enums exactly as PRD §10.1. `shadow_decision` set only in Off. A layer that did not run is `null`, never `0`. `forensic_status = pending` only for Deny, Human Deny or Divert (decision or shadow decision) and for Off allows that delivered the secret (PRD §10.2). `NOTIFY fw_events_forensic` in the same transaction.
 - [ ] B-04 `register_session`: builds and stores the immutable manifest (agent definition, model IDs, level config, rule set version, risky pattern table version from `current_pattern_version()`, judge policy hash, thresholds, weights). Level `rule_version = 0` means "pin the latest rule set version now". Seeds `fw_mock_state` from `mock_state_seed`.
 - [ ] B-05 Mock tools on `fw_mock_state` (D-11): `search_docs`, `read_file`, `send_email` (writes to the mock mailbox; mail to the attacker address becomes a readable `ToolEffect`), `query_db` (mock rows, never real SQL), `run_shell` (tiny emulator over the mock filesystem: `ls`, `cat`, `echo`, everything else "command not found"). No `subprocess`, `os.system` or network calls anywhere in `firewall/` (test with an import and AST check). The state change and its `tool_executed` event commit in one transaction. A recorded `call_id` never executes twice.
-- [ ] B-06 Bot runner: Grok through `XaiClient`, last 20 messages, up to 5 tool-call rounds. After the 5th round the runner asks for a final reply with tools disabled, and that reply goes through the output check. Tool results are wrapped as untrusted data. A Grok error raises `BotUnavailable` and releases the claim, so the arena can retry with the same `message_id`.
+- [ ] B-06 Bot runner: Gemini through `GeminiClient.chat_with_tools` (echo each call's `ToolCall.signature` back on the next turn), last 20 messages, up to 5 tool-call rounds. After the 5th round the runner asks for a final reply with tools disabled, and that reply goes through the output check. Tool results are wrapped as untrusted data. A bot model error raises `BotUnavailable` and releases the claim, so the arena can retry with the same `message_id`.
 - [ ] B-07 Claims and idempotency (PRD §15.1 Concurrency): one active claim per session, held through review; same `message_id` and same text returns the stored result; same `message_id` and different text raises `MessageConflict`; a new message while one is in flight or held raises `SessionBusy`.
 - [ ] B-08 Pipeline for Basic: input check, then bot runner, with a tool-call check before each tool runs and a tool-result scan after (B-02 forged-approval signal, untrusted-content signal), then an output check. Return `TurnResult` as soon as the event is committed.
 - [ ] B-09 Off mode (D-02, PRD §7.2): run full Strict scoring (cumulative scan, risky history read in shadow, judge off by default), store `shadow_decision`, enforce Allow. Invalid schema or unknown tool is still denied and never runs. Oversized input is truncated and logged. Risky behavior rows are written with `shadow: true`.
@@ -230,7 +230,7 @@ Everything here is pure Python with unit tests. It needs no DB and no contracts 
 - [ ] D-03 Import boundary test: `app/firewall/` imports no `fastapi`, `starlette`, `subprocess` or `socket` (PRD §3.3).
 - [ ] D-04 Information-flow test: no `PlayerView` or C3 response contains judge reasons, tool arguments, blocked text or trace-back fields (I-3).
 - [ ] D-05 Attack fixtures `fixtures/attacks/m2_*.json` for every demo step in PRD §6.5, with expected decisions per mode.
-- [ ] D-06 Help M1 swap fakes off and run the PRD §6.5 demo on real Grok.
+- [ ] D-06 Help M1 swap fakes off and run the PRD §6.5 demo on the real Gemini bot.
 
 ---
 
@@ -253,7 +253,7 @@ E-01 to E-04 are "as AFF v0.3". That document is not in this repo, so the expect
 | E-45 | Score 96 in Basic | Divert. Real tool never executes. Decoy shown as executed | MVP |
 | E-46 | Review, admin clicks "not ok" | Status `human_denied`. Nothing executes, no decoy, `risky_behavior_events` row with `action: human_deny` | MVP |
 | E-46a | Any item is held (input, tool call or reply) | Response returns at once with `awaiting_review`, ticket ID and the pending message | MVP |
-| E-46b | Held reply approved | Stored reply released unchanged. Zero new Grok calls (assert on `ScriptedLLM`) | MVP |
+| E-46b | Held reply approved | Stored reply released unchanged. Zero new bot model calls (assert on `ScriptedLLM`) | MVP |
 | E-46c | Reply containing the secret, scored in the Review band | Never held. B-01 denies (Basic) or diverts (Strict) | MVP |
 | E-47 | Review expires | Deny | MVP |
 | E-48 | Decoy generator returns text containing the secret | Regenerated once, then template. `secret_delivered` stays false | MVP |
@@ -283,7 +283,7 @@ E-01 to E-04 are "as AFF v0.3". That document is not in this repo, so the expect
 | M2-X07 | Player text of exactly 4,000 characters, then 4,001 | 4,000 checked normally. 4,001 denied in Basic and Strict, truncated and logged in Off | §7.6 |
 | M2-X08 | Tool arguments over 4,000 characters, tool result over 8,000, reply over 4,000 | Denied in Basic and Strict. Truncated and logged in Off | §7.6 |
 | M2-X09 | Bot proposes a 6th tool-call round | Not run. Final reply requested with tools disabled and output-checked | §7.6 |
-| M2-X10 | Session with 25 messages | Grok receives the last 20. Checks use the full record | §7.6 |
+| M2-X10 | Session with 25 messages | The bot model receives the last 20. Checks use the full record | §7.6 |
 | M2-X11 | Same `call_id` recorded twice (for example after a retry) | Executes once | §7.6 |
 | M2-X12 | DB error while writing a tool effect | Neither the state change nor the event is committed. Turn fails closed | §15.1 |
 | M2-X13 | Rule regex that is invalid RE2, or a rule evaluation over 50 ms | Deny in Basic and Strict. In Off, `shadow_decision: deny`, `decision: allow` | §9.1 |
@@ -335,7 +335,7 @@ E-01 to E-04 are "as AFF v0.3". That document is not in this repo, so the expect
 - [ ] AC-4 PRD §16.3 row 4: Divert writes risky behavior and trace-back, shows a decoy, never executes.
 - [ ] AC-5 PRD §16.3 row 5 (M2 side): Strict calls risky history on every item and the result changes a decision (E-50, with M3).
 - [ ] AC-6 PRD §15.1: fail closed, atomicity, concurrency, reproducibility, rules under 50 ms p95, information flow, each covered by a test.
-- [ ] AC-7 PRD §6.5 steps 1–4 pass with `ScriptedLLM` (deterministic) and on real Grok on the `integration` branch.
+- [ ] AC-7 PRD §6.5 steps 1–4 pass with `ScriptedLLM` (deterministic) and on the real Gemini bot on the `integration` branch.
 - [ ] AC-8 C2, C3 and C6 implemented exactly to the frozen contracts. M1, M3 and M4 tests pass when they swap their fakes for M2's real code.
 
 ---
@@ -377,8 +377,8 @@ E-01 to E-04 are "as AFF v0.3". That document is not in this repo, so the expect
 | E-01 to E-04 details from AFF v0.3 (doc not in repo) | As §5.1, from PRD §15.1 |
 | Off shadow uses which thresholds | Full Strict scoring with the Off level's thresholds, which M1 seeds with the Strict values. B-01 maps to Deny in Off, so the demo line reads "would have denied (R-003, B-01)" |
 | How the Off feed shows shadow decisions | Contract addition `FeedItem.shadow_decision` (Off only, listed in M1 §3.1) |
-| Grok error during a live turn | `BotUnavailable`; the arena shows `not_sent` and retries with the same `message_id` |
-| Grok error during an approved continuation | Fail closed: `blocked` |
+| Bot model error during a live turn | `BotUnavailable`; the arena shows `not_sent` and retries with the same `message_id` |
+| Bot model error during an approved continuation | Fail closed: `blocked` |
 | Judge on every Strict item or above a floor | Only items scoring 20 or more (PRD §18.2) |
 | Strict visible output over 50,000 characters | Further replies denied |
 | Level `rule_version` | `0` means pin the latest rule set version at registration, so E-57 works without editing levels |

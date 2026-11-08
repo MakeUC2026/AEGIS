@@ -147,7 +147,7 @@ def test_register_session_carries_mock_state_seed() -> None:
         agent=AgentDefinition(
             system_prompt="p",
             tools=[ToolDef(name="search_docs", json_schema={"type": "object"}, high_risk=False)],
-            model_id="grok-x",
+            model_id="gemini-bot-test",
         ),
         level=LevelConfig(
             level_id="lvl-1",

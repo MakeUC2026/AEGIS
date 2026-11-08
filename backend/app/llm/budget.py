@@ -1,4 +1,5 @@
-"""Global daily model budget (PRD §15.1 Cost: "global daily budget for Grok and Gemini").
+"""Global daily model budget (PRD §15.1 Cost). Since the D-15 revision every model call
+is Gemini (bot, judge, forensics, decoys, quiz).
 
 Each call inserts one `usage` row (kind `llm_call`). A transaction-scoped advisory lock
 serializes the count-then-insert so concurrent calls cannot overshoot the limit.

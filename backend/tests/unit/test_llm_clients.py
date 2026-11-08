@@ -7,12 +7,10 @@ import json
 import httpx
 import pytest
 
-from app.llm.base import BudgetExhausted, ChatMessage, LLMError, LLMTimeout
+from app.llm.base import BudgetExhausted, ChatMessage, LLMError, LLMTimeout, ToolCall
 from app.llm.gemini import GeminiClient
-from app.llm.xai import XaiClient
 
 GEMINI_KEY = "test-gemini-key"
-XAI_KEY = "test-xai-key"
 
 
 class CountingBudget:
@@ -109,66 +107,146 @@ async def test_budget_exhausted_blocks_the_call() -> None:  # M1-X11
     assert calls == []
 
 
-def _xai(handler, budget: CountingBudget | None = None) -> XaiClient:  # type: ignore[no-untyped-def]
-    return XaiClient(
-        api_key=XAI_KEY, budget=budget or CountingBudget(), transport=httpx.MockTransport(handler)
+# --- Gemini as the arena bot: chat with function calling (replaces xAI Grok) ---------------
+
+TOOLS = [
+    {
+        "name": "send_email",
+        "description": "Send an email",
+        "parameters": {
+            "type": "object",
+            "properties": {"to": {"type": "string"}},
+            "required": ["to"],
+            "additionalProperties": False,
+        },
+    }
+]
+
+
+def _chat_answer(parts: list[dict]) -> httpx.Response:
+    return httpx.Response(
+        200, json={"candidates": [{"content": {"role": "model", "parts": parts}}]}
     )
 
 
-async def test_xai_chat_with_tools_request_and_tool_call_parsing() -> None:
+async def test_gemini_chat_request_shape() -> None:
     seen: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        seen["auth"] = request.headers.get("authorization")
+        seen["url"] = str(request.url)
         seen["body"] = json.loads(request.content)
-        message = {
-            "role": "assistant",
-            "content": None,
-            "tool_calls": [
-                {
-                    "id": "call_1",
-                    "type": "function",
-                    "function": {"name": "send_email", "arguments": '{"to": "x@evil.example"}'},
-                },
-                {
-                    "id": "call_2",
-                    "type": "function",
-                    "function": {"name": "read_file", "arguments": "{broken"},
-                },
-            ],
-        }
-        return httpx.Response(200, json={"choices": [{"message": message}]})
+        return _chat_answer([{"text": "Hello"}])
 
-    tools = [{"name": "send_email", "description": "d", "parameters": {"type": "object"}}]
-    result = await _xai(handler).chat_with_tools(
-        "grok-test",
-        [ChatMessage(role="system", content="s"), ChatMessage(role="user", content="u")],
-        tools,
+    budget = CountingBudget()
+    msgs = [
+        ChatMessage(role="system", content="You are Kestrel."),
+        ChatMessage(role="user", content="hi"),
+    ]
+    out = await _gemini(handler, budget).chat_with_tools("gemini-bot", msgs, TOOLS)
+    body = seen["body"]
+    assert seen["url"].endswith("/models/gemini-bot:generateContent")
+    assert body["systemInstruction"] == {"parts": [{"text": "You are Kestrel."}]}
+    assert body["contents"] == [{"role": "user", "parts": [{"text": "hi"}]}]
+    decl = body["tools"][0]["functionDeclarations"][0]
+    assert decl["name"] == "send_email"
+    assert decl["parametersJsonSchema"] == TOOLS[0]["parameters"]  # full JSON schema, unchanged
+    assert body["toolConfig"] == {"functionCallingConfig": {"mode": "AUTO"}}
+    assert out.content == "Hello" and out.tool_calls == []
+    assert budget.spent == ["gemini"]
+
+
+async def test_gemini_chat_parses_function_calls_with_ids_and_signatures() -> None:
+    def handler(_r: httpx.Request) -> httpx.Response:
+        return _chat_answer(
+            [
+                {"text": "Sending now."},
+                {
+                    "functionCall": {
+                        "id": "fc-1",
+                        "name": "send_email",
+                        "args": {"to": "x@evil.example"},
+                    },
+                    "thoughtSignature": "sig-abc",
+                },
+                {"functionCall": {"name": "send_email", "args": {"to": "y@evil.example"}}},
+            ]
+        )
+
+    out = await _gemini(handler).chat_with_tools(
+        "m", [ChatMessage(role="user", content="go")], TOOLS
     )
-    assert seen["auth"] == f"Bearer {XAI_KEY}"
-    assert seen["body"]["model"] == "grok-test"
-    assert seen["body"]["tools"][0] == {"type": "function", "function": tools[0]}
-    assert result.tool_calls[0].arguments == {"to": "x@evil.example"}
-    assert result.tool_calls[1].arguments == "{broken"  # raw string kept for M2 to deny
-    assert result.content is None
+    assert out.content == "Sending now."
+    first, second = out.tool_calls
+    assert (first.id, first.name, first.arguments, first.signature) == (
+        "fc-1",
+        "send_email",
+        {"to": "x@evil.example"},
+        "sig-abc",
+    )
+    assert second.id and second.id != first.id  # generated when Gemini sends no id
+    assert second.signature is None
 
 
-async def test_xai_tool_result_messages_are_serialised() -> None:
+async def test_gemini_chat_round_trips_tool_calls_and_results() -> None:
+    seen: dict = {}
+
     def handler(request: httpx.Request) -> httpx.Response:
-        body = json.loads(request.content)
-        assert body["messages"][-1] == {"role": "tool", "tool_call_id": "call_1", "content": "ok"}
-        return httpx.Response(200, json={"choices": [{"message": {"content": "done"}}]})
+        seen["body"] = json.loads(request.content)
+        return _chat_answer([{"text": "Done."}])
 
-    msgs = [ChatMessage(role="tool", tool_call_id="call_1", content="ok")]
-    assert (await _xai(handler).chat_with_tools("g", msgs, [])).content == "done"
+    call = ToolCall(
+        id="fc-1", name="send_email", arguments={"to": "a@company.example"}, signature="sig-abc"
+    )
+    msgs = [
+        ChatMessage(role="user", content="email hr"),
+        ChatMessage(role="assistant", content=None, tool_calls=[call]),
+        ChatMessage(role="tool", tool_call_id="fc-1", content="sent"),
+    ]
+    await _gemini(handler).chat_with_tools("m", msgs, TOOLS)
+    model_turn, tool_turn = seen["body"]["contents"][1:]
+    assert model_turn == {
+        "role": "model",
+        "parts": [
+            {
+                "functionCall": {
+                    "id": "fc-1",
+                    "name": "send_email",
+                    "args": {"to": "a@company.example"},
+                },
+                "thoughtSignature": "sig-abc",
+            }
+        ],
+    }
+    assert tool_turn == {
+        "role": "user",
+        "parts": [
+            {
+                "functionResponse": {
+                    "id": "fc-1",
+                    "name": "send_email",
+                    "response": {"result": "sent"},
+                }
+            }
+        ],
+    }
 
 
-async def test_xai_errors_map_to_llm_errors() -> None:
+async def test_gemini_chat_tool_result_for_unknown_call_is_an_error() -> None:
+    msgs = [ChatMessage(role="tool", tool_call_id="nope", content="x")]
     with pytest.raises(LLMError):
-        await _xai(lambda _r: httpx.Response(429, json={})).chat_with_tools("g", [], [])
+        await _gemini(lambda _r: _chat_answer([])).chat_with_tools("m", msgs, [])
+
+
+async def test_gemini_chat_errors_map_to_llm_errors() -> None:
+    with pytest.raises(LLMError):
+        await _gemini(lambda _r: httpx.Response(429, json={})).chat_with_tools("m", [], [])
+    with pytest.raises(LLMError):
+        await _gemini(lambda _r: httpx.Response(200, json={"candidates": []})).chat_with_tools(
+            "m", [], []
+        )
 
     def slow(_r: httpx.Request) -> httpx.Response:
         raise httpx.ConnectTimeout("slow")
 
     with pytest.raises(LLMTimeout):
-        await _xai(slow).chat_with_tools("g", [], [])
+        await _gemini(slow).chat_with_tools("m", [], [])

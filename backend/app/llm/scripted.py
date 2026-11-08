@@ -1,4 +1,5 @@
-"""ScriptedLLM: deterministic stand-in for Grok and Gemini in tests (PRD §16.1, I-6).
+"""ScriptedLLM: deterministic stand-in for Gemini, bot and security models alike
+(PRD §16.1, I-6).
 
 Replays scripted answers in order, records every call for assertions, and raises
 `UnexpectedLLMCall` when a test makes a call it did not script.

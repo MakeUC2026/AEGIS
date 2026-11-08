@@ -81,7 +81,9 @@ async def test_scripted_llm_replays_in_order_and_records_calls() -> None:
     )
     assert await llm.generate_json("m", "p1", {"type": "object"}) == {"risk": 10}
     assert await llm.generate_json("m", "p2", {"type": "object"}) == {"risk": 90}
-    chat = await llm.chat_with_tools("grok", [ChatMessage(role="user", content="hi")], tools=[])
+    chat = await llm.chat_with_tools(
+        "gemini-bot", [ChatMessage(role="user", content="hi")], tools=[]
+    )
     assert chat.tool_calls[0].name == "search_docs"
     assert len(await llm.embed("text")) == 768
     assert [c.prompt for c in llm.json_calls] == ["p1", "p2"]
