@@ -232,6 +232,15 @@ Everything here is pure Python with unit tests. It needs no DB and no contracts 
 - [ ] D-05 Attack fixtures `fixtures/attacks/m2_*.json` for every demo step in PRD §6.5, with expected decisions per mode.
 - [ ] D-06 Help M1 swap fakes off and run the PRD §6.5 demo on the real Gemini bot.
 
+
+### Deferred from M1 (2026-11-07)
+
+Items M1 cannot finish without M2. M1 tracks them in its §4c and ticks its side when these land.
+
+- [ ] DM1-1 **Contract sign-off before G1** (M1 AC-8, X-2): review the shapes M2 provides or consumes in `backend/app/contracts/` (C2, C3, C6, C7). Then either record "M2 signs off" in the M1 Progress log or open a contract-change PR. Contracts freeze at G1.
+- [ ] DM1-2 **Rule seed hook** (M1 D-02): put the B-02 starting rules in `backend/app/firewall/seed.py` as `async def seed(engine) -> None`, idempotent. `scripts/seed_demo.py` and the Compose start-up seed then pick it up automatically. See the handoff, §4 table.
+- [ ] DM1-3 **Real C2 on `integration` at G1** (M1 D-01, X-6): push the C2 implementation with `create()` (DD-05) to the `integration` branch and tell M1. M1 then runs the arena Off and Basic flows with `firewall` removed from `AEGIS_USE_FAKES`. This is M1's side of M2 AC-8.
+
 ---
 
 ## 5. Edge cases (each is a required test)
