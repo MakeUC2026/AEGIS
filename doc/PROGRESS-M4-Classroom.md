@@ -177,7 +177,7 @@ M4 provides no in-process contract to the other machines.
 - [x] A-02 Quiz Pydantic models for the PRD §13.3 JSON, plus a separate **public** model with no `answer_index`, `explanation` or answer key. The public model is the only one an API route may return before the student answers.
 - [x] A-03 MCQ grading in code: 1 point per correct answer, first answer counts.
 - [x] A-04 Context-builder helpers: wrap every transcript and event text in untrusted-data delimiters; the answer key shape (attack family, why it worked or failed, which layer made the difference, how to prevent it).
-- [ ] A-05 Grader hardening sample set in `fixtures/quiz/m4_grader_samples.json` (PRD §13.5): at least 10 explanations, including asking for full marks, pasting the answer key, prompt injection in the answer, an empty answer, an off-topic answer, and at least 3 good answers. Each has an expected score range.
+- [x] A-05 Grader hardening sample set in `fixtures/quiz/m4_grader_samples.json` (PRD §13.5): at least 10 explanations, including asking for full marks, pasting the answer key, prompt injection in the answer, an empty answer, an off-topic answer, and at least 3 good answers. Each has an expected score range.
 - [ ] A-06 UI shells with mock data for sessions list, session detail, insights, secrets, quiz chat and quiz result, using M1's shell and theme.
 
 ### Phase B: classroom API and dashboard on fakes (H3–H8, Gate 1)
