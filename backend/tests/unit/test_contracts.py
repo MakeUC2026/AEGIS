@@ -251,3 +251,24 @@ def test_datetimes_are_timezone_aware() -> None:
         )
     aware = datetime(2026, 11, 8, tzinfo=UTC)
     assert aware.tzinfo is not None
+
+
+def test_feed_item_shadow_decision_includes_divert() -> None:
+    # PRD D-02 and §5.2: Off shadows all four actions, Divert included (R-006, score 95+).
+    # The actual decision stays allow; only the shadow says divert.
+    item = FeedItem(
+        stage="tool_call_check",
+        decision="allow",
+        rule_ids=["R-006"],
+        score_band="high",
+        shadow_decision="divert",
+    )
+    assert item.shadow_decision == "divert"
+    with pytest.raises(ValidationError):  # nothing is held in Off, so no human decision
+        FeedItem(
+            stage="input_check",
+            decision="allow",
+            rule_ids=[],
+            score_band="low",
+            shadow_decision="human_deny",
+        )

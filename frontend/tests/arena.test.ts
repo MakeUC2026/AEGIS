@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { computeFingerprint, inputLocked, newMessageId, statusLine, type Turn } from "@/lib/arena";
+import { computeFingerprint, inputLocked, newMessageId, shadowLabel, statusLine, type Turn } from "@/lib/arena";
 
 const turn = (over: Partial<Turn>): Turn => ({
   message_id: "m1",
@@ -64,5 +64,14 @@ describe("computeFingerprint (PRD §8.5: SHA-256, no fingerprinting library)", (
     expect(a).toMatch(/^[0-9a-f]{64}$/);
     expect(await computeFingerprint(parts)).toBe(a);
     expect(await computeFingerprint({ ...parts, timezone: "EST" })).not.toBe(a);
+  });
+});
+
+describe("shadowLabel (Off-mode feed, PRD D-02)", () => {
+  it("phrases every shadow action, divert included", () => {
+    expect(shadowLabel("deny")).toBe("would have denied");
+    expect(shadowLabel("divert")).toBe("would have diverted");
+    expect(shadowLabel("review")).toBe("would have sent to review");
+    expect(shadowLabel("allow")).toBe("would have allowed");
   });
 });
