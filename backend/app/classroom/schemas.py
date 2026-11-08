@@ -53,9 +53,15 @@ class SessionRow(BaseModel):
     quiz_attempts: int
 
 
+class LevelOption(BaseModel):
+    level_id: str
+    name: str
+
+
 class SessionList(BaseModel):
     items: list[SessionRow]
     total: int
+    levels: list[LevelOption]
 
 
 class OutcomeBlock(BaseModel):

@@ -227,9 +227,9 @@ def _forget_seed(arena: FakeArenaService, read: FakeFirewallRead) -> None:
 def _seed_levels(arena: FakeArenaService) -> None:
     if arena.levels:
         return
-    add_level(arena, "L1", 1, "Warm-up", "off")
-    add_level(arena, "L2", 2, "Guarded", "basic")
-    add_level(arena, "L3", 3, "Fortress", "strict")
+    add_level(arena, "lvl-1", 1, "Warm-up", "off")
+    add_level(arena, "lvl-2", 2, "Guarded", "basic")
+    add_level(arena, "lvl-3", 3, "Fortress", "strict")
 
 
 def _seed_insights(read: FakeFirewallRead) -> None:
@@ -276,7 +276,7 @@ def seed_dev_data(arena: FakeArenaService, read: FakeFirewallRead, people: dict[
     if "Ada" in people:
         obtained = mk(
             "Ada",
-            "L1",
+            "lvl-1",
             "off",
             obtained=True,
             started_at=now() - timedelta(hours=5),
@@ -285,7 +285,7 @@ def seed_dev_data(arena: FakeArenaService, read: FakeFirewallRead, people: dict[
         )
         divert = mk(
             "Ada",
-            "L3",
+            "lvl-3",
             "strict",
             closed=True,
             started_at=now() - timedelta(hours=3),
@@ -308,7 +308,7 @@ def seed_dev_data(arena: FakeArenaService, read: FakeFirewallRead, people: dict[
         add_ticket(read, divert, "approved" if "Dee" in people else "expired", people.get("Dee"))
         mk(
             "Ada",
-            "L2",
+            "lvl-2",
             "basic",
             messages=[("Hello!", "Hi, how can I help?")],
             scores=[("allow", 3)],
@@ -316,7 +316,7 @@ def seed_dev_data(arena: FakeArenaService, read: FakeFirewallRead, people: dict[
     if "Ben" in people:
         blocked = mk(
             "Ben",
-            "L2",
+            "lvl-2",
             "basic",
             closed=True,
             started_at=now() - timedelta(hours=2),
@@ -326,7 +326,7 @@ def seed_dev_data(arena: FakeArenaService, read: FakeFirewallRead, people: dict[
         add_forensic(read, blocked, "roleplay")
         mk(
             "Ben",
-            "L1",
+            "lvl-1",
             "off",
             closed=True,
             started_at=now() - timedelta(hours=1),
@@ -339,7 +339,7 @@ def seed_dev_data(arena: FakeArenaService, read: FakeFirewallRead, people: dict[
     if "Cho" in people:
         mk(
             "Cho",
-            "L2",
+            "lvl-2",
             "basic",
             admin_test=True,
             messages=[("test ping", "pong")],
@@ -347,8 +347,8 @@ def seed_dev_data(arena: FakeArenaService, read: FakeFirewallRead, people: dict[
         )
     if not arena.secrets:
         created = now() - timedelta(days=1)
-        for level in ("L1", "L2", "L3"):
-            hit = level == "L1" and obtained is not None
+        for level in ("lvl-1", "lvl-2", "lvl-3"):
+            hit = level == "lvl-1" and obtained is not None
             arena.secrets = {
                 **arena.secrets,
                 level: SecretStatus(

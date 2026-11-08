@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.classroom.access import session_scope_user_id
 from app.classroom.quiz_status import NOT_TAKEN, QuizSummary, summaries_for
-from app.classroom.schemas import MAX_PAGE, SessionList, SessionQuery, SessionRow
+from app.classroom.schemas import MAX_PAGE, LevelOption, SessionList, SessionQuery, SessionRow
 from app.classroom.users_repo import names_for
 from app.contracts.arena import ArenaServicePort, ArenaSession, SessionFilters
 from app.contracts.firewall_read import FirewallReadPort, SessionSummary
@@ -71,8 +71,10 @@ async def list_sessions_view(
         limit=MAX_PAGE,
     )
     sessions = await arena.list_sessions(filters)
+    all_levels = await arena.list_levels()
+    options = [LevelOption(level_id=lv.level_id, name=lv.name) for lv in all_levels]
     if not sessions:
-        return SessionList(items=[], total=0)
+        return SessionList(items=[], total=0, levels=options)
     summaries = {
         s.fw_session_id: s
         for s in await read.get_session_summaries([s.fw_session_id for s in sessions])
@@ -86,7 +88,7 @@ async def list_sessions_view(
     kept.sort(key=lambda s: s.started_at, reverse=True)
     page = kept[q.offset : q.offset + q.limit]
     names = await names_for(engine, {s.user_id for s in page})
-    levels = {lv.level_id: lv.name for lv in await arena.list_levels()}
+    levels = {lv.level_id: lv.name for lv in all_levels}
     rows = [
         build_row(
             s,
@@ -97,4 +99,4 @@ async def list_sessions_view(
         )
         for s in page
     ]
-    return SessionList(items=rows, total=len(kept))
+    return SessionList(items=rows, total=len(kept), levels=options)

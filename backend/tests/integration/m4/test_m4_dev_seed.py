@@ -45,7 +45,7 @@ async def test_seed_satisfies_the_contracts_and_covers_every_case() -> None:
     for s in sessions:
         assert await read.get_manifest_summary(s.fw_session_id)
     assert len(await arena.list_levels()) == 3
-    assert {x.level_id for x in await arena.get_secret_status()} == {"L1", "L2", "L3"}
+    assert {x.level_id for x in await arena.get_secret_status()} == {"lvl-1", "lvl-2", "lvl-3"}
     f = InsightFilters()
     assert await read.get_rule_fire_counts(f) and await read.get_attack_family_counts(f)
     assert await read.get_decision_counts(f) and await read.get_risky_pattern_counts(f)

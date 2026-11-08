@@ -223,7 +223,7 @@ async def test_quiz_columns_show_status_latest_and_best(world: World) -> None:
 
 async def test_empty_class_returns_empty_list(world: World) -> None:
     resp = await _get(world, "Cho")
-    assert resp.status_code == 200 and resp.json() == {"items": [], "total": 0}
+    assert resp.status_code == 200 and resp.json() == {"items": [], "total": 0, "levels": []}
 
 
 async def test_session_owner_missing_from_users_shows_no_name(world: World) -> None:
@@ -232,3 +232,16 @@ async def test_session_owner_missing_from_users_shows_no_name(world: World) -> N
     add_session(world.arena, world.read, user_id=str(uuid.uuid4()), level_id="L1", mode="off")
     row = (await _get(world, "Cho")).json()["items"][0]
     assert row["student_name"] is None
+
+
+async def test_response_lists_levels_for_the_filter_dropdown(world: World) -> None:
+    await _seed(world)
+    body = (await _get(world, "Cho")).json()
+    assert body["levels"] == [
+        {"level_id": "L1", "name": "Warm-up"},
+        {"level_id": "L2", "name": "Guarded"},
+        {"level_id": "L3", "name": "Fortress"},
+    ]
+    # Levels are not narrowed by the filters, so the dropdown stays usable.
+    narrowed = (await _get(world, "Cho", level="L2")).json()
+    assert len(narrowed["levels"]) == 3
