@@ -173,7 +173,7 @@ M4 provides no in-process contract to the other machines.
 
 ### Phase A: pure logic and UI shells, no dependencies (H0–H3)
 
-- [ ] A-01 `quiz/rubric.py` locked (PRD §13.4): four items (Attack, Why it worked or failed, Defense layer, Prevention), 0–3 each, version `r1`. Final score is MCQ (5 × 1) plus free response (12), out of 17, shown as a percentage. A test pins the rubric's hash so any change fails CI.
+- [x] A-01 `quiz/rubric.py` locked (PRD §13.4): four items (Attack, Why it worked or failed, Defense layer, Prevention), 0–3 each, version `r1`. Final score is MCQ (5 × 1) plus free response (12), out of 17, shown as a percentage. A test pins the rubric's hash so any change fails CI.
 - [ ] A-02 Quiz Pydantic models for the PRD §13.3 JSON, plus a separate **public** model with no `answer_index`, `explanation` or answer key. The public model is the only one an API route may return before the student answers.
 - [ ] A-03 MCQ grading in code: 1 point per correct answer, first answer counts.
 - [ ] A-04 Context-builder helpers: wrap every transcript and event text in untrusted-data delimiters; the answer key shape (attack family, why it worked or failed, which layer made the difference, how to prevent it).
