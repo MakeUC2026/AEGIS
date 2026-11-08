@@ -1,0 +1,206 @@
+.progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.progress li {
+  min-width: 34px;
+  padding: 4px 8px;
+  text-align: center;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.progress li[aria-current="step"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.progress li.done {
+  color: var(--fg);
+  background: var(--panel-2);
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 20px;
+}
+
+.card h2 {
+  margin: 0 0 4px;
+  font-size: 1.15rem;
+}
+
+.topic {
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.options {
+  border: 0;
+  padding: 0;
+  margin: 16px 0;
+  display: grid;
+  gap: 8px;
+}
+
+.options legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font-size: 1rem;
+}
+
+.option {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.option:hover {
+  border-color: var(--accent);
+}
+
+.option:has(input:focus-visible) {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.option.right {
+  border-color: var(--accent);
+  background: var(--panel-2);
+}
+
+.option.wrong {
+  border-color: var(--danger);
+}
+
+.option input {
+  margin-top: 4px;
+  accent-color: var(--accent);
+}
+
+.reveal {
+  padding: 10px 12px;
+  border-left: 3px solid var(--info);
+  background: var(--bg);
+  margin: 0 0 16px;
+}
+
+.chat {
+  list-style: none;
+  margin: 16px 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.bubble {
+  max-width: 90%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.bubble.me {
+  justify-self: end;
+  border-color: var(--info);
+}
+
+.bubble.them {
+  justify-self: start;
+  border-color: var(--accent);
+}
+
+.compose {
+  display: grid;
+  gap: 8px;
+}
+
+.compose textarea {
+  font: inherit;
+  min-height: 90px;
+  padding: 10px;
+  background: var(--input);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  resize: vertical;
+  width: 100%;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.scoreBig {
+  font-family: var(--font-display);
+  font-size: clamp(2.2rem, 1.4rem + 3vw, 3.4rem);
+  line-height: 1;
+  margin: 0;
+}
+
+.items {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.items li {
+  display: grid;
+  grid-template-columns: 1fr max-content;
+  gap: 4px 12px;
+}
+
+.fb {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.fb dt {
+  color: var(--accent);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fb dd {
+  margin: 2px 0 0;
+}
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+
+@media (max-width: 760px) {
+  .card {
+    padding: 14px;
+  }
+
+  .bubble {
+    max-width: 100%;
+  }
+}
