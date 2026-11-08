@@ -28,9 +28,7 @@ from app.contracts.firewall import NotFound
 from app.contracts.users import CurrentUser
 from app.firewall.ports import get_arena_service, get_firewall_read
 
-router = APIRouter(
-    prefix="/api/classroom", tags=["classroom"]
-)
+router = APIRouter(prefix="/api/classroom", tags=["classroom"])
 
 Engine = Annotated[AsyncEngine, Depends(get_engine)]
 Caller = Annotated[CurrentUser, Depends(require_user)]
