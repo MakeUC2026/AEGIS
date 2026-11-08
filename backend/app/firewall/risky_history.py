@@ -131,7 +131,7 @@ _CANDIDATE = text(
     " CAST(:user_id AS uuid), CAST(:args AS jsonb), :args_hash)"
     " ON CONFLICT (tool, source_args_hash) WHERE source_args_hash IS NOT NULL DO NOTHING"
 )
-_VERSION = text(
+VERSION_SQL = text(
     "SELECT greatest("
     " (SELECT coalesce(max(version), 0) FROM risky_pattern_versions),"
     " coalesce(max(approved_in_version), 0), coalesce(max(retired_in_version), 0))"
@@ -148,7 +148,7 @@ def canonical_args_hash(args: dict[str, Any]) -> str:
     return text_hash(canonical)
 
 
-def _as_float32(values: Any) -> list[float]:
+def as_float32(values: Any) -> list[float]:
     """Round-trip through float32 (pgvector's storage): overflow raises, underflow flushes."""
     try:
         floats = [float(v) for v in values]
@@ -202,7 +202,7 @@ class RiskyHistory:
         except Exception as exc:  # LLMError, timeout, budget: fail closed (M3-X10)
             raise RiskyHistoryError(f"embedding failed: {type(exc).__name__}") from exc
         # Validate before caching, so a bad vector can never reach M2's transaction later.
-        floats = _as_float32(values)  # exactly what pgvector will store
+        floats = as_float32(values)  # exactly what pgvector will store
         if not any(floats):
             raise RiskyHistoryError("embedding has zero norm as float32 (cosine undefined)")
         literal = vector_literal(floats)
@@ -267,7 +267,7 @@ class RiskyHistory:
         """Highest version issued by an approval or a retirement, else 0 (plan §10)."""
         try:
             async with self._engine.connect() as conn:
-                return int((await conn.execute(_VERSION)).scalar_one())
+                return int((await conn.execute(VERSION_SQL)).scalar_one())
         except Exception as exc:
             raise RiskyHistoryError("pattern version query failed") from exc
 

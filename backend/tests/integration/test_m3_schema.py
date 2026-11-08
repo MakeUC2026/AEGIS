@@ -59,7 +59,7 @@ async def test_no_foreign_keys_to_other_parts(engine: AsyncEngine) -> None:
 def test_heads_include_fw_intel_and_downgrade_round_trips() -> None:
     heads = run_alembic("heads", "--verbose")
     assert heads.returncode == 0, heads.stderr
-    assert "0004_firewall_intel" in heads.stdout
+    assert "0004b_forensic_detail" in heads.stdout  # fw_intel head, chained off 0004 (§0.4)
     assert "fw_intel" in heads.stdout
     labels = [ln for ln in heads.stdout.splitlines() if ln.startswith("Branch names:")]
     assert any("arena" in ln for ln in labels)  # alongside M1's arena head, whatever its rev
@@ -70,7 +70,7 @@ def test_heads_include_fw_intel_and_downgrade_round_trips() -> None:
 
 
 async def test_downgrade_drops_only_m3_tables(engine: AsyncEngine) -> None:
-    down = run_alembic("downgrade", "fw_intel@-1")
+    down = run_alembic("downgrade", "fw_intel@-2")  # 0004b, then 0004
     assert down.returncode == 0, down.stderr
     try:
         tables = await _tables(engine)

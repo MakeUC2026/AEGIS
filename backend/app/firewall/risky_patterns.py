@@ -83,7 +83,10 @@ def compile_regex(pattern: str) -> Any:
 def _domain(value: str) -> str:
     value = value.strip().strip("<>")
     if "://" in value:  # URL first: `https://evil.example/@company.example` is evil.example
-        return (urlsplit(value).hostname or "").rstrip(".")
+        try:
+            return (urlsplit(value).hostname or "").rstrip(".")
+        except ValueError:  # malformed URL (`https://[broken.company.example`): no host at all,
+            return ""  # so domain_in never matches and domain_not_in always does (fail closed)
     if "@" in value:
         return value.rsplit("@", 1)[1].rstrip(".")
     return value.rstrip(".")
@@ -150,7 +153,7 @@ def _condition_matches_one(cond: Condition, raw: Any) -> bool:
     return False
 
 
-def _condition_matches(cond: Condition, args: dict[str, Any]) -> bool:
+def condition_matches(cond: Condition, args: dict[str, Any]) -> bool:
     if cond.arg not in args:
         return False
     raw = args[cond.arg]
@@ -162,7 +165,7 @@ def match(pattern: PatternSpec, tool: str | None, canonical_args: dict[str, Any]
     """True when the tool is the same and every condition matches. Empty patterns never match."""
     if not pattern.conditions or tool != pattern.tool or canonical_args is None:
         return False
-    return all(_condition_matches(c, canonical_args) for c in pattern.conditions)
+    return all(condition_matches(c, canonical_args) for c in pattern.conditions)
 
 
 def structural_errors(pattern: PatternSpec) -> list[str]:

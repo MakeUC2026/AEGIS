@@ -20,6 +20,9 @@ class _Answer(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
+MAX_SIGNALS = 20  # bounds what the model can make us store (security review)
+Signal = Annotated[str, Field(max_length=300)]
+
 _ATLAS_ID = re.compile(r"AML\.T\d{4}(\.\d{3})?")
 
 
@@ -35,7 +38,7 @@ class ForensicAnalysis(_Answer):
     attack_family: AttackFamily
     atlas_techniques: Annotated[list[str], AfterValidator(_atlas_ids)] = Field(default_factory=list)
     summary: str = Field(min_length=1, max_length=600)  # two plain sentences
-    missed_signals: list[str] = Field(default_factory=list)
+    missed_signals: list[Signal] = Field(default_factory=list, max_length=MAX_SIGNALS)
     would_have_blocked_in: list[Mode] = Field(default_factory=list)
 
 
@@ -52,6 +55,13 @@ class PatternDraft(_Answer):
 class DraftAnswer(_Answer):
     """At most one improvement per event; `draft` is null when nothing sensible fits."""
 
+    draft: RuleDraft | PatternDraft | None = Field(default=None, discriminator="kind")
+
+
+class ForensicAnswer(_Answer):
+    """One structured call per event (C-02, C-03): the analysis plus at most one draft."""
+
+    analysis: ForensicAnalysis
     draft: RuleDraft | PatternDraft | None = Field(default=None, discriminator="kind")
 
 

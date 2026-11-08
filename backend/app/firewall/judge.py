@@ -44,7 +44,7 @@ _ACTION_BANDS = {"allow": (0, 29), "review": (30, 59), "deny": (60, 94), "divert
 _DELIMITER = re.compile(r"<{3}\s*(?:end_)?untrusted_data\s*>{3}", re.IGNORECASE)
 
 
-def _untrusted(text: str) -> str:
+def strip_delimiters(text: str) -> str:
     """Strip delimiters until none remain, so nested copies cannot reassemble one."""
     text = unicodedata.normalize("NFKC", text)
     while True:
@@ -58,10 +58,11 @@ def build_prompt(item: CheckedItem, policy: str) -> str:
     call = f"tool: {item.tool}\narguments: {item.canonical_args}\n" if item.tool else ""
     data = (
         f"stage: {item.stage}\n{call}"
-        f"item under check:\n{_untrusted(item.text)}\n\n"
-        f"recent context:\n{_untrusted(item.context_excerpt)}"
+        f"item under check:\n{strip_delimiters(item.text)}\n\n"
+        f"recent context:\n{strip_delimiters(item.context_excerpt)}"
     )
-    return f"{policy}\n\n{DATA_OPEN}\n{_untrusted(data)}\n{DATA_CLOSE}\n\nAnswer with the JSON now."
+    block = f"{DATA_OPEN}\n{strip_delimiters(data)}\n{DATA_CLOSE}"
+    return f"{policy}\n\n{block}\n\nAnswer with the JSON now."
 
 
 def parse_verdict(raw: dict[str, Any]) -> JudgeVerdict:
