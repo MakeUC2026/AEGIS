@@ -13,6 +13,11 @@ deadline; the C-03 sweeper marks it expired). An unknown ticket is `NotFound`.
   `decide_ticket` expires a due ticket itself before refusing; close expires every pending
   ticket of the session through the same code. No risky-behaviour row: a timeout is the
   reviewer's silence, not the student's act (M2-DD-41).
+- **check** (C-04, `check_ticket`): the owner's poll. Status, deadline, and the stored
+  `TurnResult` once the turn has finished (claim `done`). A turn still continuing, or held
+  again under a new ticket, shows no result yet, so the arena keeps polling the ticket it
+  was given and gets the final result when the turn really ends (M2-DD-42). A due pending
+  ticket expires on the spot. Someone else's ticket, or an unknown one, is `NotFound`.
 - **not ok (Human Deny):** one transaction marks the ticket `human_denied`, writes the
   `review_resolved` human_deny event, calls `record_behavior(action="human_deny")` and, for a
   held tool call, `add_candidate`, and finishes the claim with status `human_denied` and
@@ -40,6 +45,7 @@ from app.contracts.firewall import (
     FeedItem,
     NotFound,
     PlayerView,
+    TicketResult,
     TurnResult,
 )
 from app.contracts.firewall_admin import ConflictError, TicketDecision
@@ -81,6 +87,14 @@ _SESSION_PENDING = (
     "SELECT ticket_id FROM fw_tickets WHERE fw_session_id = :sid AND status = 'pending'"
 )
 _EXPIRE = "UPDATE fw_tickets SET status = 'expired', decided_at = now() WHERE ticket_id = :t"
+_CHECK = (
+    "SELECT t.status, t.expires_at, t.expires_at > now() AS live, c.status AS claim_status,"
+    " c.result FROM fw_tickets t"
+    " JOIN fw_sessions s ON s.fw_session_id = t.fw_session_id"
+    " LEFT JOIN fw_claims c"
+    " ON c.fw_session_id = t.fw_session_id AND c.message_id = t.message_id"
+    " WHERE t.ticket_id = :t AND CAST(s.owner_ref AS text) = :owner"
+)
 _STATUS = {True: "approved", False: "human_denied"}
 _KIND_BY_STAGE = {"input_check": "input", "tool_call_check": "tool_call", "output_check": "reply"}
 _DECIDE = (
@@ -308,4 +322,31 @@ async def decide_ticket(
         _resolved_line(cont, "allow"),
         held,
         clock,
+    )
+
+
+async def _read_check(engine: AsyncEngine, owner_ref: str, ticket_id: str) -> Mapping[str, Any]:
+    async with engine.connect() as conn:
+        row = (
+            (await conn.execute(text(_CHECK), {"t": ticket_id, "owner": owner_ref}))
+            .mappings()
+            .first()
+        )
+    if row is None:
+        raise NotFound("ticket not found")
+    return row
+
+
+async def check_ticket(engine: AsyncEngine, owner_ref: str, ticket_id: str) -> TicketResult:
+    row = await _read_check(engine, owner_ref, ticket_id)
+    if row["status"] == "pending" and not row["live"]:
+        await expire_ticket(engine, ticket_id)  # lazy expiry; a decision in progress wins
+        row = await _read_check(engine, owner_ref, ticket_id)
+    finished = row["status"] != "pending" and row["claim_status"] == "done"
+    raw = _json(row["result"]) if finished else None
+    return TicketResult(
+        ticket_id=ticket_id,
+        status=row["status"],
+        expires_at=row["expires_at"].astimezone(UTC).isoformat(),
+        turn_result=TurnResult.model_validate(raw) if raw is not None else None,
     )

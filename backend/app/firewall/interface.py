@@ -6,8 +6,8 @@ AEGIS_USE_FAKES: it wires the shared database engine, the Gemini bot client (wit
 budget) and whichever C7 ports are active (fakes until M3's real ones land).
 
 Without a Gemini key the firewall still starts; every turn then fails as `BotUnavailable`
-and the arena shows "not sent" (M2-DD-34). `check_ticket` answers `NotFound` until review
-tickets exist (C-01 to C-04).
+and the arena shows "not sent" (M2-DD-34). `check_ticket` is the arena's poll for a held
+turn (C-04, `tickets.py`).
 """
 
 from __future__ import annotations
@@ -21,7 +21,6 @@ from app.contracts.common import ClientMeta
 from app.contracts.firewall import (
     Catalog,
     FirewallPort,
-    NotFound,
     RegisterSession,
     SessionHandle,
     TicketResult,
@@ -33,6 +32,7 @@ from app.firewall.catalog import read_catalog
 from app.firewall.closing import close_session
 from app.firewall.pipeline import run_message
 from app.firewall.sessions import register_session
+from app.firewall.tickets import check_ticket
 from app.llm.base import ChatMessage, ChatModel, ChatResult, LLMError
 from app.llm.budget import DailyBudget
 from app.llm.gemini import GeminiClient
@@ -83,7 +83,7 @@ class RealFirewall:
         )
 
     async def check_ticket(self, owner_ref: str, ticket_id: str) -> TicketResult:
-        raise NotFound("ticket not found")  # review tickets arrive with C-01 to C-04
+        return await check_ticket(self._engine, owner_ref, ticket_id)
 
     async def close_session(self, owner_ref: str, fw_session_id: str) -> None:
         await close_session(self._engine, owner_ref, fw_session_id)
