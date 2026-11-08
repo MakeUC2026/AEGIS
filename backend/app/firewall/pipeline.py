@@ -155,7 +155,7 @@ def tool_hook(engine: AsyncEngine, turn: Turn, clock: Clock) -> Callable[..., An
         turn.calls_made += 1
         seen = (*turn.ctx.visible_output, *turn.visible_new)
         checked = await check_tool_call(
-            turn.ctx, call, call_id, turn.tool_results, clock(), seen, turn.sentinel
+            turn.ctx, call, call_id, turn.tool_results, clock(), seen, turn.sentinel, turn.diverted
         )
         turn.checks.append(checked)
         tool = storable(call.name)
@@ -611,7 +611,7 @@ async def after_bot(
     if bot.stopped or bot.reply is None:
         return await finish(engine, turn, message, bot, "blocked", None)
     seen = (*ctx.visible_output, *turn.visible_new)
-    checked_output = await check_output(ctx, bot.reply, seen, clock(), turn.sentinel)
+    checked_output = await check_output(ctx, bot.reply, seen, clock(), turn.sentinel, turn.diverted)
     turn.checks.append(checked_output)
     if checked_output.gate.decision == "review":
         return await _park(engine, turn, message, user_text, bot, "reply", checked_output)

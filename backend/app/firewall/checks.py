@@ -76,6 +76,7 @@ async def _gate(
     stage: Stage,
     text: str,
     call: CanonicalCall | None = None,
+    after_divert: bool = False,
     **flags: Any,
 ) -> tuple[GateDecision, Intel]:
     scored = layer1(replace(signals, rule_hits=rules.hits), ctx.weights)
@@ -90,6 +91,7 @@ async def _gate(
             layer1_score=scored.score,
             call=call,
             rules_ms=rules.elapsed_ms,
+            after_divert=after_divert,
         )
     gate = decide(
         GateInput(
@@ -155,6 +157,7 @@ async def check_tool_call(
     now: datetime,
     seen_before: Sequence[str] = (),
     sentinel: Sentinel | None = None,
+    after_divert: bool = False,
 ) -> Checked:
     canonical = canonicalize(call.name, call.arguments, ctx.tools, call_id)
     if isinstance(canonical, CanonicalError):
@@ -184,7 +187,7 @@ async def check_tool_call(
     event_id = new_event_id()
     gate, intel = await _gate(
         ctx, rules, signals, sentinel, event_id, "tool_call_check", args_text, canonical,
-        leak=gate_leak(ctx, leak), limit_exceeded=limited.action != "ok",
+        after_divert, leak=gate_leak(ctx, leak), limit_exceeded=limited.action != "ok",
     )  # fmt: skip
     return Checked(
         "tool_call_check", "bot_output", gate, args_text, canonical.tool, call_id, canonical,
@@ -198,6 +201,7 @@ async def check_output(
     seen_before: Sequence[str],
     now: datetime,
     sentinel: Sentinel | None = None,
+    after_divert: bool = False,
 ) -> Checked:
     limited = check_text("reply", storable(reply), ctx.mode)
     if ctx.mode == "basic":
@@ -211,7 +215,7 @@ async def check_output(
     event_id = new_event_id()
     gate, intel = await _gate(
         ctx, rules, signals, sentinel, event_id, "output_check", limited.text,
-        leak=gate_leak(ctx, leak), limit_exceeded=over,
+        after_divert=after_divert, leak=gate_leak(ctx, leak), limit_exceeded=over,
     )  # fmt: skip
     return Checked(
         "output_check", "bot_output", gate, limited.text, leak=leak, event_id=event_id, intel=intel

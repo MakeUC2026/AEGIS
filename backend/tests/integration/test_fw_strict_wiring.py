@@ -256,6 +256,51 @@ async def test_an_approved_pattern_forces_deny(engine: AsyncEngine) -> None:
     assert event["risky_pattern_ids_matched"] == ["pat-9"]
 
 
+# --- a diverted turn is not re-scored by its own divert ----------------------------------------
+
+
+async def test_the_rest_of_a_diverted_turn_ignores_its_own_divert_and_record(
+    engine: AsyncEngine,
+) -> None:
+    from app.arena.scenario_data import ATTACKER_MAILBOX
+    from app.contracts.firewall_admin import RuleForm
+
+    divert = RuleForm(
+        applies_on="bot_tool_call", checks="named_argument", argument_name="to",
+        operator="domain_not_in", value=["company.example"], action="divert", note="outside mail",
+    )  # fmt: skip
+    own_record = RiskyHistorySignals(
+        forced_deny=False,
+        matched_pattern_ids=[],
+        user_tool_events_points=0,
+        prior_divert_points=20,
+        similarity_points=25,
+        similarity_top=1.0,
+        latency_ms=1,
+    )  # what the real history says once the divert's own row exists
+    risky = InMemoryRiskyHistory([_signals(0), _signals(0), own_record])
+    sid, owner = await _session(engine, mode="strict", extra=divert)
+    llm = ScriptedLLM(
+        chat_answers=[
+            _tool(1, "send_email", to=ATTACKER_MAILBOX, subject="s", body="b"),
+            ChatResult(content="Done."),
+        ]
+    )
+    result = await run_message(
+        engine, llm, owner, sid, "m1", "email it", CLIENT, risky=risky, judge=StubJudge()
+    )
+    assert result.facts.diverted is True and result.player_view.status == "replied"
+    [reply_check] = await _rows(
+        engine,
+        "SELECT sentinel_score, score_breakdown FROM fw_events"
+        " WHERE fw_session_id = :s AND stage = 'output_check'",
+        s=sid,
+    )
+    breakdown = reply_check["score_breakdown"]
+    assert reply_check["sentinel_score"] == 0
+    assert (breakdown["prior_divert"], breakdown["similarity"]) == (0, 0)
+
+
 # --- the secret never goes to a model --------------------------------------------------------
 
 

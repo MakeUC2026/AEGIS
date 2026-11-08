@@ -126,6 +126,7 @@ class Sentinel:
         layer1_score: int,
         call: CanonicalCall | None = None,
         rules_ms: float = 0.0,
+        after_divert: bool = False,
     ) -> Intel:
         latency: dict[str, int] = {"rules": round(rules_ms)}
         if ctx.mode == "basic" or (self._risky is None and self._judge is None):
@@ -156,6 +157,18 @@ class Sentinel:
                 latency["history"] = _ms(started)
                 return Intel(history_error=True, latency_ms=latency)
             latency["history"] = _ms(started)
+            if after_divert and history is not None:
+                # This turn already returned a decoy. Its own divert (+20) and its own record,
+                # which matches this very message (+25), must not re-score the rest of the
+                # turn: a held reply would give the decoy away (PRD D-03, E-45). The next turn
+                # counts them.
+                history = history.model_copy(
+                    update={
+                        "prior_divert_points": 0,
+                        "similarity_points": 0,
+                        "similarity_top": None,
+                    }
+                )
         judge_on = ctx.mode == "strict" or self._judge_in_off
         forced = history is not None and history.forced_deny
         if (

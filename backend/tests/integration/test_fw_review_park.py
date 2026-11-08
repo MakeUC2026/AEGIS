@@ -75,19 +75,26 @@ async def _session(
     review_timeout_s: int = 120,
     pattern_version: int = 0,
     sub: str = "auth0|rp",
+    risky: Any = None,
+    judge: Any = None,
+    owner: str | None = None,
 ) -> tuple[str, str]:
+    """`risky` and `judge` register the session (they pin the pattern version and the judge
+    model); the defaults are the fakes. `owner` adds a session for an existing user."""
     await seed(engine)
     async with engine.begin() as conn:
-        owner = str(
-            (
-                await conn.execute(
-                    text(
-                        "INSERT INTO users (auth0_sub, role) VALUES (:sub, 'student') RETURNING id"
-                    ),
-                    {"sub": sub},
-                )
-            ).scalar_one()
-        )
+        if owner is None:
+            owner = str(
+                (
+                    await conn.execute(
+                        text(
+                            "INSERT INTO users (auth0_sub, role) VALUES (:sub, 'student')"
+                            " RETURNING id"
+                        ),
+                        {"sub": sub},
+                    )
+                ).scalar_one()
+            )
         if extra is not None:  # a later rule set with one more rule, as an admin would add
             await conn.execute(text("INSERT INTO rule_sets (version, note) VALUES (2, 'x')"))
             await conn.execute(
@@ -115,9 +122,10 @@ async def _session(
         secret=SECRET,
         mock_state_seed=build_mock_state(level_id, SECRET),
     )
-    risky = InMemoryRiskyHistory()
-    risky.pattern_version = pattern_version
-    handle = await register_session(engine, req, risky, StubJudge())
+    if risky is None:
+        risky = InMemoryRiskyHistory()
+        risky.pattern_version = pattern_version
+    handle = await register_session(engine, req, risky, judge or StubJudge())
     return handle.fw_session_id, owner
 
 
