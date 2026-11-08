@@ -15,6 +15,7 @@ dependencies = [
     "pyjwt[crypto]>=2.15",
     "auth0-api-python==1.0.0b10",
     "jsonschema>=4.23",
+    "google-re2>=1.1",
 ]
 
 [dependency-groups]
