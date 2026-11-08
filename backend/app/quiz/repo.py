@@ -395,3 +395,85 @@ async def add_turns(
                 "text": body,
             },
         )
+
+
+async def conversations(
+    conn: AsyncConnection, quiz_id: uuid.UUID
+) -> dict[str, list[tuple[str, str]]]:
+    rows = (
+        await conn.execute(
+            text("SELECT question_id, role, text FROM quiz_turns WHERE quiz_id = :q ORDER BY seq"),
+            {"q": quiz_id},
+        )
+    ).all()
+    out: dict[str, list[tuple[str, str]]] = {}
+    for qid, role, body in rows:
+        out.setdefault(qid, []).append((role, body))
+    return out
+
+
+@dataclass(frozen=True)
+class StoredResult:
+    mcq_points: int
+    item_scores: dict[str, int]
+    total_points: int
+    percent: int
+    feedback: str
+
+
+async def insert_result(
+    conn: AsyncConnection,
+    quiz_id: uuid.UUID,
+    *,
+    rubric_version: str,
+    mcq_points: int,
+    item_scores: dict[str, int],
+    total_points: int,
+    percent: int,
+    feedback: str,
+) -> bool:
+    """Store the grade and close the quiz. False when another request already finished it."""
+    inserted = await conn.execute(
+        text(
+            "INSERT INTO quiz_result (quiz_id, rubric_version, mcq_points, item_scores,"
+            " total_points, percent, feedback)"
+            " VALUES (:q, :v, :m, CAST(:i AS jsonb), :t, :p, :f) ON CONFLICT (quiz_id) DO NOTHING"
+        ),
+        {
+            "q": quiz_id,
+            "v": rubric_version,
+            "m": mcq_points,
+            "i": json.dumps(item_scores),
+            "t": total_points,
+            "p": percent,
+            "f": feedback,
+        },
+    )
+    if inserted.rowcount != 1:
+        return False
+    await conn.execute(
+        text("UPDATE quiz SET status = 'done', finished_at = now() WHERE id = :q"), {"q": quiz_id}
+    )
+    return True
+
+
+async def mark_grading_failed(conn: AsyncConnection, quiz_id: uuid.UUID) -> None:
+    await conn.execute(
+        text("UPDATE quiz SET status = 'grading_failed' WHERE id = :q AND status = 'in_progress'"),
+        {"q": quiz_id},
+    )
+
+
+async def get_result(conn: AsyncConnection, quiz_id: uuid.UUID) -> StoredResult | None:
+    r = (
+        await conn.execute(
+            text(
+                "SELECT mcq_points, item_scores, total_points, percent, feedback"
+                " FROM quiz_result WHERE quiz_id = :q"
+            ),
+            {"q": quiz_id},
+        )
+    ).first()
+    if r is None:
+        return None
+    return StoredResult(r[0], _json(r[1]), r[2], r[3], r[4])

@@ -27,6 +27,7 @@ from app.quiz.schemas import (
     AttemptList,
     MineList,
     QuizView,
+    ResultView,
     StartIn,
     TurnIn,
     TurnOut,
@@ -117,6 +118,30 @@ async def post_turn(
         return await service.post_turn(
             _deps(engine, runtime), user, quiz_id, body.question_id, body.text
         )
+    except _HANDLED as exc:
+        raise _http(exc) from None
+
+
+@router.post("/quizzes/{quiz_id}/finish")
+async def finish(quiz_id: PathId, user: Caller, engine: Engine, runtime: Runtime) -> ResultView:
+    try:
+        return await service.finish_quiz(_deps(engine, runtime), user, quiz_id)
+    except _HANDLED as exc:
+        raise _http(exc) from None
+
+
+@router.post("/quizzes/{quiz_id}/regrade")
+async def regrade(quiz_id: PathId, user: Caller, engine: Engine, runtime: Runtime) -> ResultView:
+    try:
+        return await service.finish_quiz(_deps(engine, runtime), user, quiz_id, regrade=True)
+    except _HANDLED as exc:
+        raise _http(exc) from None
+
+
+@router.get("/quizzes/{quiz_id}/result")
+async def result(quiz_id: PathId, user: Caller, engine: Engine, runtime: Runtime) -> ResultView:
+    try:
+        return await service.get_result(_deps(engine, runtime), user, quiz_id)
     except _HANDLED as exc:
         raise _http(exc) from None
 

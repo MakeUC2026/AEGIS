@@ -106,3 +106,26 @@ class TurnOut(Contract):
     follow_ups_used: int
     closed: bool
     reason: Literal["done", "follow_up_limit", "timeout"] | None
+
+
+class ItemGrade(Contract):
+    key: str
+    title: str
+    score: int
+    max: int
+
+
+class ResultView(Contract):
+    """Score and feedback for the student. `items` (per rubric item) is for teachers only."""
+
+    quiz_id: str
+    session_id: str
+    attempt_number: int
+    status: QuizStatus
+    mcq_points: int | None
+    mcq_max: int
+    total_points: int | None
+    max_points: int
+    percent: int | None
+    feedback: str | None
+    items: list[ItemGrade] | None

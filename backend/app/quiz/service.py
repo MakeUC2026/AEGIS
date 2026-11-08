@@ -17,12 +17,14 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from app.contracts.arena import ArenaServicePort, ArenaSession
 from app.contracts.firewall_read import FirewallReadPort
 from app.contracts.users import CurrentUser
-from app.quiz import repo
+from app.quiz import repo, rubric
 from app.quiz.classmate import TurnRecord, conversation_state, is_done, next_follow_up
 from app.quiz.context import build_context
 from app.quiz.errors import BadInput, Conflict, NotAllowed, QuizMissing, SessionMissing
+from app.quiz.feedback import write_feedback
 from app.quiz.generator import generate_quiz
-from app.quiz.grading import InvalidAnswer, grade_answer
+from app.quiz.grader import GradingFailed, grade_free_response
+from app.quiz.grading import InvalidAnswer, grade_answer, mcq_points
 from app.quiz.llm import QuizRuntime
 from app.quiz.models import PublicQuiz
 from app.quiz.repo import QuizRow
@@ -31,9 +33,11 @@ from app.quiz.schemas import (
     AssignOut,
     AttemptList,
     AttemptRow,
+    ItemGrade,
     MineList,
     MineRow,
     QuizView,
+    ResultView,
     TurnOut,
 )
 
@@ -349,3 +353,106 @@ async def post_turn(
         closed=closing is not None,
         reason=closing,  # type: ignore[arg-type]
     )
+
+
+def _result_view(row: QuizRow, stored: repo.StoredResult | None, *, staff: bool) -> ResultView:
+    items = None
+    if stored is not None and staff:
+        items = [
+            ItemGrade(
+                key=i.key, title=i.title, score=stored.item_scores.get(i.key, 0), max=i.max_points
+            )
+            for i in rubric.RUBRIC
+        ]
+    return ResultView(
+        quiz_id=row.id,
+        session_id=row.session_id,
+        attempt_number=row.attempt_number,
+        status=row.status,  # type: ignore[arg-type]
+        mcq_points=stored.mcq_points if stored else None,
+        mcq_max=rubric.MCQ_MAX,
+        total_points=stored.total_points if stored else None,
+        max_points=rubric.TOTAL_POINTS,
+        percent=stored.percent if stored else None,
+        feedback=stored.feedback if stored else None,
+        items=items,
+    )
+
+
+async def get_result(deps: QuizDeps, user: CurrentUser, quiz_id: str) -> ResultView:
+    async with deps.engine.connect() as conn:
+        row = await load_quiz(deps, user, quiz_id, conn=conn)
+        stored = await repo.get_result(conn, uuid.UUID(row.id))
+    return _result_view(row, stored, staff=user.has("teacher"))
+
+
+async def finish_quiz(
+    deps: QuizDeps, user: CurrentUser, quiz_id: str, *, regrade: bool = False
+) -> ResultView:
+    """Grade the quiz and write the feedback. Idempotent: a finished quiz returns its result."""
+    async with deps.engine.connect() as conn:
+        qid = repo.parse_uuid(quiz_id)
+        row = await repo.get_quiz(conn, qid) if qid else None
+        if row is None:
+            raise QuizMissing("quiz not found")
+        if row.user_id != user.id:
+            raise NotAllowed("forbidden")
+        if row.status == "done":
+            stored = await repo.get_result(conn, uuid.UUID(row.id))
+            return _result_view(row, stored, staff=False)
+        if row.status == "assigned" or (regrade and row.status != "grading_failed"):
+            raise Conflict("this quiz cannot be graded yet")
+        rid = uuid.UUID(row.id)
+        spec = await repo.load_spec(conn, rid, row.rubric_version)
+        chosen = await repo.chosen_map(conn, rid)
+        conversation = await repo.conversations(conn, rid)
+    key = row.answer_key
+    if key is None:
+        raise Conflict("this quiz has no answer key")
+    session = await deps.arena.get_session(row.session_id)
+    if session is None:
+        raise SessionMissing("session not found")
+
+    mcq = mcq_points(spec, chosen)
+    try:
+        scores = await grade_free_response(
+            deps.runtime.llm,
+            model=deps.runtime.pro_model,
+            questions=spec.free_responses,
+            conversation=conversation,
+            key=key,
+        )
+    except GradingFailed:
+        async with deps.engine.begin() as conn:
+            await repo.mark_grading_failed(conn, rid)
+        failed = QuizRow(**{**row.__dict__, "status": "grading_failed"})
+        return _result_view(failed, None, staff=False)
+
+    async def redact(text: str) -> str:
+        return await deps.read.redact_for_session(session.fw_session_id, text)
+
+    written = await write_feedback(
+        deps.runtime.llm,
+        model=deps.runtime.flash_model,
+        mcq_points=mcq,
+        item_scores=scores,
+        key=key,
+        redact=redact,
+    )
+    total = mcq + sum(scores.values())
+    async with deps.engine.begin() as conn:
+        await repo.insert_result(
+            conn,
+            rid,
+            rubric_version=row.rubric_version,
+            mcq_points=mcq,
+            item_scores=scores,
+            total_points=total,
+            percent=rubric.percent(mcq_points=mcq, item_scores=scores),
+            feedback=written.text,
+        )
+    async with deps.engine.connect() as conn:
+        done = await repo.get_quiz(conn, rid)
+        stored = await repo.get_result(conn, rid)
+    assert done is not None
+    return _result_view(done, stored, staff=False)
