@@ -61,6 +61,12 @@ def _evaluate(ctx: TurnContext, *subjects: RuleSubject) -> Evaluation:
     )
 
 
+def gate_leak(ctx: TurnContext, leak: LeakMatch | None) -> LeakMatch | None:
+    """What B-01 hands the Gatekeeper: the leak, unless an admin switched B-01 off (C-12). The
+    check still records the leak, so `secret_attempted` stays true."""
+    return leak if ctx.builtin_on("B-01") else None
+
+
 async def _gate(
     ctx: TurnContext,
     rules: Evaluation,
@@ -173,11 +179,12 @@ async def check_tool_call(
         earlier_denies=ctx.earlier_denies,
         tool_result_read_this_turn=bool(tool_results),
         tool_results_this_turn=tuple(tool_results),
+        check_forged_approval=ctx.builtin_on("B-02"),
     )
     event_id = new_event_id()
     gate, intel = await _gate(
         ctx, rules, signals, sentinel, event_id, "tool_call_check", args_text, canonical,
-        leak=leak, limit_exceeded=limited.action != "ok",
+        leak=gate_leak(ctx, leak), limit_exceeded=limited.action != "ok",
     )  # fmt: skip
     return Checked(
         "tool_call_check", "bot_output", gate, args_text, canonical.tool, call_id, canonical,
@@ -204,7 +211,7 @@ async def check_output(
     event_id = new_event_id()
     gate, intel = await _gate(
         ctx, rules, signals, sentinel, event_id, "output_check", limited.text,
-        leak=leak, limit_exceeded=over,
+        leak=gate_leak(ctx, leak), limit_exceeded=over,
     )  # fmt: skip
     return Checked(
         "output_check", "bot_output", gate, limited.text, leak=leak, event_id=event_id, intel=intel

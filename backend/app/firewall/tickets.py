@@ -55,6 +55,7 @@ from app.contracts.sentinel import (
     RiskyBehaviorRecord,
     RiskyHistoryPort,
 )
+from app.db.audit import record_audit
 from app.firewall.claims import complete_claim
 from app.firewall.continuation import continue_turn
 from app.firewall.decoys import DecoyGenerator
@@ -307,6 +308,15 @@ async def decide_ticket(
             await conn.execute(
                 text(_DECIDE),
                 {"t": ticket_id, "admin": admin_id, "status": _STATUS[approved]},
+            )
+            await record_audit(  # with the decision, on the same transaction (PRD §15.1)
+                conn,
+                actor_id=admin_id,
+                entity="fw_ticket",
+                entity_id=ticket_id,
+                action="decide",
+                before={"status": "pending"},
+                after={"status": _STATUS[approved], "decision": decision},
             )
             if not approved:
                 return await _human_deny(conn, t, cont, risky, clock())

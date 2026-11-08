@@ -51,12 +51,8 @@ _STUDENT_ROWS = (
     "SELECT message_id, content, created_at FROM fw_conversation"
     " WHERE fw_session_id = :s AND role = 'student' ORDER BY seq"
 )
-_BOT_ROWS = (
-    "SELECT message_id, content FROM fw_conversation WHERE fw_session_id = :s AND role = 'bot'"
-)
 _CLAIMS = "SELECT message_id, result, updated_at FROM fw_claims WHERE fw_session_id = :s"
 _TOOL_CALLS = "SELECT call_id, result, is_decoy FROM fw_tool_calls WHERE fw_session_id = :s"
-_DECOY_MAIL = "SELECT emails, attacker_mailbox FROM fw_mock_state WHERE fw_session_id = :s"
 _REPLY_DIVERTS = (
     "SELECT message_id FROM fw_events WHERE fw_session_id = :s AND stage = 'output_check'"
     " AND execution_status = 'diverted'"
@@ -72,9 +68,29 @@ _TICKETS = (
     " CAST(decided_by AS text) AS decided_by FROM fw_tickets"
     " WHERE fw_session_id = :s ORDER BY created_at"
 )
-_DIVERT_EVENTS = (
-    "SELECT event_id, time, stage, tool, call_id, message_id FROM fw_events"
-    " WHERE fw_session_id = :s AND execution_status = 'diverted' ORDER BY time, event_id"
+_SECRETS_ANY = (
+    "SELECT fw_session_id, secret FROM fw_sessions WHERE fw_session_id = ANY(CAST(:ids AS text[]))"
+)
+_DIVERT_EVENTS_ANY = (
+    "SELECT fw_session_id, event_id, time, stage, tool, call_id, message_id FROM fw_events"
+    " WHERE fw_session_id = ANY(CAST(:ids AS text[])) AND execution_status = 'diverted'"
+    " ORDER BY time, event_id"
+)
+_STUDENT_ROWS_ANY = (
+    "SELECT fw_session_id, message_id, content FROM fw_conversation"
+    " WHERE fw_session_id = ANY(CAST(:ids AS text[])) AND role = 'student'"
+)
+_BOT_ROWS_ANY = (
+    "SELECT fw_session_id, message_id, content FROM fw_conversation"
+    " WHERE fw_session_id = ANY(CAST(:ids AS text[])) AND role = 'bot'"
+)
+_TOOL_CALLS_ANY = (
+    "SELECT fw_session_id, call_id, result FROM fw_tool_calls"
+    " WHERE fw_session_id = ANY(CAST(:ids AS text[]))"
+)
+_DECOY_MAIL_ANY = (
+    "SELECT fw_session_id, emails FROM fw_mock_state"
+    " WHERE fw_session_id = ANY(CAST(:ids AS text[]))"
 )
 _SUMMARIES = (
     "SELECT s.fw_session_id,"
@@ -289,50 +305,66 @@ class FirewallRead:
         return [TicketItem.model_validate(dict(r)) for r in rows]
 
     async def get_diverts(self, fw_session_id: str) -> list[DivertItem]:
+        found = await self.divert_items([fw_session_id])
+        if fw_session_id not in found:
+            raise NotFound("session not found")
+        return found[fw_session_id]
+
+    async def divert_items(self, session_ids: Sequence[str]) -> dict[str, list[DivertItem]]:
+        """Divert items for several sessions in a fixed number of queries (also used by the
+        admin API). A session that does not exist is absent from the answer."""
+        ids = list(dict.fromkeys(session_ids))
+        if not ids:
+            return {}
+        p = {"ids": ids}
         async with self._engine.connect() as conn:
-            p = {"s": fw_session_id}
-            secret = await self._secret(conn, fw_session_id)
-            events = (await conn.execute(text(_DIVERT_EVENTS), p)).mappings().all()
+            secrets = {
+                r["fw_session_id"]: r["secret"]
+                for r in (await conn.execute(text(_SECRETS_ANY), p)).mappings()
+            }
+            events = (await conn.execute(text(_DIVERT_EVENTS_ANY), p)).mappings().all()
             asked = {
-                r["message_id"]: r["content"]
-                for r in (await conn.execute(text(_STUDENT_ROWS), p)).mappings()
+                (r["fw_session_id"], r["message_id"]): r["content"]
+                for r in (await conn.execute(text(_STUDENT_ROWS_ANY), p)).mappings()
             }
             said = {
-                r["message_id"]: r["content"]
-                for r in (await conn.execute(text(_BOT_ROWS), p)).mappings()
+                (r["fw_session_id"], r["message_id"]): r["content"]
+                for r in (await conn.execute(text(_BOT_ROWS_ANY), p)).mappings()
             }
             results = {
-                r["call_id"]: r["result"] or ""
-                for r in (await conn.execute(text(_TOOL_CALLS), p)).mappings()
+                (r["fw_session_id"], r["call_id"]): r["result"] or ""
+                for r in (await conn.execute(text(_TOOL_CALLS_ANY), p)).mappings()
             }
-            state = (await conn.execute(text(_DECOY_MAIL), p)).mappings().first()
+            states = (await conn.execute(text(_DECOY_MAIL_ANY), p)).mappings().all()
         mails = {
-            m["call_id"]: _mail_text(m)
-            for m in (_json(state["emails"]) if state else [])
+            (st["fw_session_id"], m["call_id"]): _mail_text(m)
+            for st in states
+            for m in _json(st["emails"])
             if m.get("is_decoy") and m.get("call_id")
         }
-        items = []
+        found: dict[str, list[DivertItem]] = {sid: [] for sid in secrets}
         for e in events:
-            question = (asked.get(e["message_id"]) or "")[:SUMMARY_CHARS]
+            sid = e["fw_session_id"]
+            question = (asked.get((sid, e["message_id"])) or "")[:SUMMARY_CHARS]
             if e["tool"]:
                 summary = f'Asked: "{question}". The assistant tried to use {e["tool"]}.'
-                shown = mails.get(e["call_id"]) or results.get(e["call_id"], "")
+                shown = mails.get((sid, e["call_id"])) or results.get((sid, e["call_id"]), "")
             else:
                 summary = (
                     f'Asked: "{question}". The assistant\'s reply would have revealed the secret.'
                 )
-                shown = said.get(e["message_id"], "")
-            items.append(
+                shown = said.get((sid, e["message_id"]), "")
+            found[sid].append(
                 DivertItem(
                     event_id=e["event_id"],
                     time=e["time"],
                     stage=e["stage"],
                     tool=e["tool"],
-                    attempted_summary=redact_secret(summary, secret),
-                    decoy_shown=redact_secret(shown, secret),
+                    attempted_summary=redact_secret(summary, secrets[sid]),
+                    decoy_shown=redact_secret(shown, secrets[sid]),
                 )
             )
-        return items
+        return found
 
     async def get_forensics(self, fw_session_id: str) -> list[ForensicItem]:
         if self._forensics is None:

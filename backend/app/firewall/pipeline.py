@@ -301,7 +301,7 @@ def _delivery(turn: Turn, message: str, extra: tuple[str, ...] = ()) -> tuple[bo
     leak = scan_cumulative(ctx.visible_output, "\n".join(visible), ctx.secret)
     if leak is None or leak.partial:
         return False, False
-    echoed = echo_excluded((*ctx.student_inputs, message), ctx.secret)
+    echoed = ctx.builtin_on("B-04") and echo_excluded((*ctx.student_inputs, message), ctx.secret)
     return not echoed, echoed
 
 

@@ -28,6 +28,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from app.contracts.common import ClientMeta
+from app.db.audit import record_audit
 from app.firewall.geoip import GeoIP, TraceSettings
 from app.firewall.textnorm import storable
 
@@ -168,5 +169,15 @@ async def purge_expired_trace_back(engine: AsyncEngine, now: datetime) -> int:
     cutoff = now - timedelta(days=TRACE_RETENTION_DAYS)
     async with engine.begin() as conn:
         await conn.execute(text(_KEEP_HASH), {"cutoff": cutoff})
-        deleted = await conn.execute(text(_PURGE), {"cutoff": cutoff})
-        return deleted.rowcount
+        removed = (await conn.execute(text(_PURGE), {"cutoff": cutoff})).rowcount
+        if removed:  # a system job: no actor; a purge that removed nothing leaves no trace
+            await record_audit(
+                conn,
+                actor_id=None,
+                entity="trace_back",
+                entity_id="purge",
+                action="purge",
+                before=None,
+                after={"deleted": removed},
+            )
+        return removed

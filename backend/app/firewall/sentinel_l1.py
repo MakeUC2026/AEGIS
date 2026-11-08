@@ -68,6 +68,7 @@ class Layer1Input:
     recent_message_times: tuple[datetime, ...] = ()
     tool_result_read_this_turn: bool = False
     tool_results_this_turn: tuple[str, ...] = ()
+    check_forged_approval: bool = True  # B-02 can be switched off by an admin (C-12)
 
 
 @dataclass(frozen=True)
@@ -139,5 +140,6 @@ def layer1(inp: Layer1Input, weights: Mapping[str, int]) -> Layer1Result:
     return Layer1Result(
         score=min(total, MAX_SCORE),
         breakdown=MappingProxyType({**rules, **signals}),
-        forged_approval=forged_approval(inp.call, inp.tool_results_this_turn),
+        forged_approval=inp.check_forged_approval
+        and forged_approval(inp.call, inp.tool_results_this_turn),
     )

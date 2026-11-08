@@ -68,12 +68,18 @@ class TurnContext:
     earlier_denies: int
     next_seq: int
 
+    def builtin_on(self, rule_id: str) -> bool:
+        """Whether a built-in (B-01 leak scan, B-02 forged approval, B-04 echo exclusion) is
+        switched on in this session's rule set; on unless an admin switched it off (C-12)."""
+        found = next((r for r in self.rules if r.rule_id == rule_id and r.builtin), None)
+        return found is None or found.enabled
+
 
 def _json(value: Any) -> Any:
     return json.loads(value) if isinstance(value, str) else value
 
 
-def _rule(row: Mapping[str, Any]) -> RuleDef:
+def rule_from_row(row: Mapping[str, Any]) -> RuleDef:
     form = _json(row["form"])
     return RuleDef(
         rule_id=row["rule_id"],
@@ -90,7 +96,7 @@ def _rule(row: Mapping[str, Any]) -> RuleDef:
 async def rules_at(conn: AsyncConnection, set_version: int) -> list[RuleDef]:
     """Each rule's newest version at or below `set_version` (deprecated ones included)."""
     rows = (await conn.execute(text(_RULES), {"v": set_version})).mappings()
-    return [_rule(r) for r in rows]
+    return [rule_from_row(r) for r in rows]
 
 
 def _history_message(row: Mapping[str, Any], payload: Mapping[str, Any]) -> ChatMessage | None:
