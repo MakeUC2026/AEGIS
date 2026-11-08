@@ -33,3 +33,6 @@ test-results/
 
 # Playwright MCP output
 .playwright-mcp/
+
+# Local credential hand-off file (never commit)
+requirements_to_close_phase_A.txt
