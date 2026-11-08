@@ -136,3 +136,20 @@ async def test_hook_does_nothing_when_a_seam_is_not_a_fake(world: World) -> None
     )
     resp = await _staff_get(world, "/api/classroom/sessions")
     assert resp.status_code == 200 and resp.json()["total"] == 0
+
+
+async def test_hook_matches_the_dev_login_display_names(world: World) -> None:
+    from app.auth.testing import make_token
+    from tests.m4_support import KEYS
+
+    world.client._transport.app.state.settings = (
+        world.client._transport.app.state.settings.model_copy(  # type: ignore[attr-defined]
+            update={"app_env": "development"}
+        )
+    )
+    token = make_token(KEYS, sub="dev|student-ada", roles=[], name="Ada (student)")
+    await world.client.get("/api/me", headers={"authorization": f"Bearer {token}"})
+    await world.persona("Cho", "teacher")
+    body = (await _staff_get(world, "/api/classroom/sessions")).json()
+    names = {r["student_name"] for r in body["items"]}
+    assert names == {"Ada (student)", "Cho"}  # Cho owns the admin-test session

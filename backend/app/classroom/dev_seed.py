@@ -202,7 +202,15 @@ def add_ticket(read: FakeFirewallRead, session: ArenaSession, status: str, by: s
 # --- the dev seed --------------------------------------------------------------------------
 
 SEED_SESSION_PREFIX = "5eed0000-0000-4000-8000-"
-DEV_NAMES = ("Ada", "Ben", "Cho", "Dee")
+DEV_FIRST_NAMES = ("Ada", "Ben", "Cho", "Dee")
+# Dev sign-in names look like "Ada (student)"; tests use the bare first name. Match both.
+DEV_NAMES = (
+    *DEV_FIRST_NAMES,
+    "Ada (student)",
+    "Ben (student)",
+    "Cho (teacher)",
+    "Dee (firewall admin)",
+)
 _seeded_for: weakref.WeakKeyDictionary[FakeArenaService, dict[str, str]] = (
     weakref.WeakKeyDictionary()
 )
@@ -374,7 +382,10 @@ async def dev_seed_hook(request: Request) -> None:
     arena, read = get_arena_service(), get_firewall_read()
     if not (isinstance(arena, FakeArenaService) and isinstance(read, FakeFirewallRead)):
         return
-    people = await ids_by_name(request.app.state.engine, DEV_NAMES)
+    found = await ids_by_name(request.app.state.engine, DEV_NAMES)
+    people: dict[str, str] = {}
+    for name, user_id in found.items():
+        people.setdefault(name.split(" ")[0], user_id)
     if _seeded_for.get(arena) == people:
         return
     seed_dev_data(arena, read, people)
