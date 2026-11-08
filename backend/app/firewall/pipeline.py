@@ -70,7 +70,7 @@ def _event(
 ) -> EventRow:
     ctx = turn.ctx
     call = checked.call
-    return row_from_decision(
+    row = row_from_decision(
         checked.gate,
         ctx.thresholds,
         fw_session_id=ctx.fw_session_id,
@@ -87,6 +87,9 @@ def _event(
         args_hash=call.args_hash if call else None,
         secret_attempted=checked.leak is not None,
     )
+    if stage == "tool_executed":  # the shadow belongs to the check, so forensics flags once
+        return replace(row, shadow_decision=None, secret_attempted=False)
+    return row
 
 
 def _tool_hook(engine: AsyncEngine, turn: _Turn, clock: Clock) -> Callable[..., Any]:
