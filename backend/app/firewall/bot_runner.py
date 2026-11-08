@@ -96,21 +96,47 @@ async def _chat(
         raise BotUnavailable(f"bot model failed: {type(exc).__name__}") from exc
 
 
-async def run_turn(
+def _tool_message(call: ToolCall, step: ToolStep) -> ChatMessage:
+    return ChatMessage(
+        role="tool", content=wrap_untrusted(call.name, step.content), tool_call_id=call.id
+    )
+
+
+Messages = tuple[ChatMessage, ...]
+
+
+async def _run_calls(
+    calls: Sequence[ToolCall],
+    round_index: int,
+    on_tool_call: ToolHook,
+    messages: Messages,
+    added: Messages,
+    first_step: ToolStep | None = None,
+) -> tuple[Messages, Messages, BotTurn | None]:
+    """Feed each call through the hook; a BotTurn back means the turn ended here."""
+    for i, call in enumerate(calls):
+        step = first_step if i == 0 and first_step is not None else None
+        step = step or await on_tool_call(call, round_index)
+        if step.kind == "hold":
+            rest = tuple(calls[i + 1 :])
+            return messages, added, BotTurn(None, True, round_index, added, True, rest)
+        if step.kind == "stop":
+            return messages, added, BotTurn(None, True, round_index, added)
+        tool_msg = _tool_message(call, step)
+        messages, added = (*messages, tool_msg), (*added, tool_msg)
+    return messages, added, None
+
+
+async def _loop(
     llm: ChatModel,
     model: str,
-    system_prompt: str,
-    history: Sequence[ChatMessage],
-    user_text: str,
-    tools: Sequence[ToolDef],
+    messages: Messages,
+    added: Messages,
+    declarations: list[dict[str, Any]],
+    round_index: int,
     on_tool_call: ToolHook,
-    timeout_s: float = BOT_CALL_TIMEOUT_S,
+    timeout_s: float,
 ) -> BotTurn:
-    window = history_window([*history, ChatMessage(role="user", content=user_text)])
-    messages: tuple[ChatMessage, ...] = (ChatMessage(role="system", content=system_prompt), *window)
-    added: tuple[ChatMessage, ...] = ()
-    declarations = tool_declarations(tools)
-    round_index = 0
     while True:
         tools_on = not tool_rounds_exhausted(round_index)
         result = await _chat(llm, model, messages, declarations if tools_on else [], timeout_s)
@@ -121,15 +147,58 @@ async def run_turn(
             role="assistant", content=result.content, tool_calls=list(result.tool_calls)
         )
         messages, added = (*messages, assistant), (*added, assistant)
-        for i, call in enumerate(result.tool_calls):
-            step = await on_tool_call(call, round_index)
-            if step.kind == "hold":
-                rest = tuple(result.tool_calls[i + 1 :])
-                return BotTurn(None, True, round_index, added, held=True, remaining_calls=rest)
-            if step.kind == "stop":
-                return BotTurn(None, True, round_index, added)
-            tool_msg = ChatMessage(
-                role="tool", content=wrap_untrusted(call.name, step.content), tool_call_id=call.id
-            )
-            messages, added = (*messages, tool_msg), (*added, tool_msg)
+        messages, added, ended = await _run_calls(
+            result.tool_calls, round_index, on_tool_call, messages, added
+        )
+        if ended is not None:
+            return ended
         round_index += 1
+
+
+def _opening(system_prompt: str, history: Sequence[ChatMessage], user_text: str) -> Messages:
+    window = history_window([*history, ChatMessage(role="user", content=user_text)])
+    return (ChatMessage(role="system", content=system_prompt), *window)
+
+
+async def run_turn(
+    llm: ChatModel,
+    model: str,
+    system_prompt: str,
+    history: Sequence[ChatMessage],
+    user_text: str,
+    tools: Sequence[ToolDef],
+    on_tool_call: ToolHook,
+    timeout_s: float = BOT_CALL_TIMEOUT_S,
+) -> BotTurn:
+    messages = _opening(system_prompt, history, user_text)
+    declarations = tool_declarations(tools)
+    return await _loop(llm, model, messages, (), declarations, 0, on_tool_call, timeout_s)
+
+
+async def resume_turn(
+    llm: ChatModel,
+    model: str,
+    system_prompt: str,
+    history: Sequence[ChatMessage],
+    user_text: str,
+    tools: Sequence[ToolDef],
+    on_tool_call: ToolHook,
+    prior: Sequence[ChatMessage],
+    round_index: int,
+    calls: Sequence[ToolCall],
+    held_step: ToolStep,
+    timeout_s: float = BOT_CALL_TIMEOUT_S,
+) -> BotTurn:
+    """Continue a turn parked on a tool call (C-02): `prior` is the bot's messages so far,
+    `calls` the held call (already run, its outcome `held_step`) then the calls queued after
+    it, which go through the hook like any new call."""
+    messages = (*_opening(system_prompt, history, user_text), *prior)
+    messages, added, ended = await _run_calls(
+        calls, round_index, on_tool_call, messages, tuple(prior), first_step=held_step
+    )
+    if ended is not None:
+        return ended
+    declarations = tool_declarations(tools)
+    return await _loop(
+        llm, model, messages, added, declarations, round_index + 1, on_tool_call, timeout_s
+    )

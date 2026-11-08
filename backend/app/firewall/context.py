@@ -36,7 +36,8 @@ _RULES = (
 )
 _CONVERSATION = (
     "SELECT seq, role, content, visible, call_id, model_payload, created_at"
-    " FROM fw_conversation WHERE fw_session_id = :sid ORDER BY seq"
+    " FROM fw_conversation WHERE fw_session_id = :sid"
+    " AND message_id IS DISTINCT FROM CAST(:exclude AS text) ORDER BY seq"
 )
 _DENIES = (
     "SELECT count(*) FROM fw_events WHERE fw_session_id = :sid"
@@ -105,13 +106,15 @@ def _history_message(row: Mapping[str, Any], payload: Mapping[str, Any]) -> Chat
     return None
 
 
-async def _conversation(conn: AsyncConnection, sid: str) -> dict[str, Any]:
+async def _conversation(conn: AsyncConnection, sid: str, exclude: str | None) -> dict[str, Any]:
     history: list[ChatMessage] = []
     visible: list[str] = []
     inputs: list[str] = []
     times: list[datetime] = []
     last_seq = 0
-    for row in (await conn.execute(text(_CONVERSATION), {"sid": sid})).mappings():
+    for row in (
+        await conn.execute(text(_CONVERSATION), {"sid": sid, "exclude": exclude})
+    ).mappings():
         payload = _json(row["model_payload"]) or {}
         last_seq = row["seq"]
         if row["role"] == "student":
@@ -131,13 +134,17 @@ async def _conversation(conn: AsyncConnection, sid: str) -> dict[str, Any]:
     }
 
 
-async def load_context(engine: AsyncEngine, fw_session_id: str) -> TurnContext:
+async def load_context(
+    engine: AsyncEngine, fw_session_id: str, exclude_message: str | None = None
+) -> TurnContext:
+    """`exclude_message`: a parked turn being continued (C-02) reads the session without its
+    own parked rows, which its continuation carries instead."""
     async with engine.connect() as conn:
         row = (await conn.execute(text(_SESSION), {"sid": fw_session_id})).mappings().first()
         if row is None:
             raise NotFound("session not found")
         rules = await rules_at(conn, row["rule_set_version"])
-        conversation = await _conversation(conn, fw_session_id)
+        conversation = await _conversation(conn, fw_session_id, exclude_message)
         denies = (await conn.execute(text(_DENIES), {"sid": fw_session_id})).scalar_one()
     agent = _json(row["agent"])
     return TurnContext(

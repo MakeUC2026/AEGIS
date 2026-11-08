@@ -70,6 +70,7 @@ class Continuation(BaseModel):
     effects: list[ToolEffect] = Field(default_factory=list)
     rule_ids: list[str] = Field(default_factory=list)
     secret_attempted: bool = False
+    secret_delivered: bool = False
     tool_results: list[str] = Field(default_factory=list)
     visible_new: list[str] = Field(default_factory=list)
     visible_by_call: dict[str, str] = Field(default_factory=dict)

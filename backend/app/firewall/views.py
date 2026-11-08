@@ -50,19 +50,25 @@ def turn_result(
     checks: Sequence[Checked],
     secret_delivered: bool,
     ticket_id: str | None = None,
+    prior_feed: Sequence[FeedItem] = (),
+    prior_rule_ids: Sequence[str] = (),
+    prior_attempted: bool = False,
 ) -> TurnResult:
-    rule_ids = list(dict.fromkeys(r for c in checks for r in c.gate.rule_ids))
+    """`prior_*`: what a parked turn had already produced before its review (C-02)."""
+    new_rule_ids = (r for c in checks for r in c.gate.rule_ids)
+    rule_ids = list(dict.fromkeys([*prior_rule_ids, *new_rule_ids]))
     view = PlayerView(
         status=status,
         reply=_FIXED_REPLY.get(status, reply),
         tool_effects=list(effects),
         ticket_id=ticket_id,
-        defense_feed=[feed_item(c) for c in checks],
+        defense_feed=[*prior_feed, *(feed_item(c) for c in checks)],
     )
     facts = Facts(
         decision=_FACT_DECISION.get(status, "allow"),
         rule_ids=rule_ids,
-        secret_attempted=any(c.leak is not None for c in checks if c.stage != "input_check"),
+        secret_attempted=prior_attempted
+        or any(c.leak is not None for c in checks if c.stage != "input_check"),
         secret_delivered=secret_delivered,
         diverted=False,
     )
