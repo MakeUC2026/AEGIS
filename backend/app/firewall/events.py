@@ -35,13 +35,15 @@ _INSERT = (
     " manifest_id, level_id, mode, stage, source_trust, tool, call_id, args_hash,"
     " sentinel_score, score_breakdown, thresholds_used, rule_ids_fired,"
     " risky_pattern_ids_matched, judge_risk, judge_reason, shadow_decision, decision,"
-    " execution_status, ticket_id, secret_attempted, secret_delivered, diverted, trace_back_id,"
+    " execution_status, ticket_id, secret_attempted, secret_delivered, echo_excluded, diverted,"
+    " trace_back_id,"
     " atlas_techniques, latency_ms, forensic_status, client_ip_hash, priority_alert)"
     " VALUES (:event_id, :time, :trace_id, :fw_session_id, CAST(:user_id AS uuid), :message_id,"
     " :manifest_id, :level_id, :mode, :stage, :source_trust, :tool, :call_id, :args_hash,"
     " :sentinel_score, CAST(:score_breakdown AS jsonb), CAST(:thresholds_used AS jsonb),"
     " :rule_ids, :risky_pattern_ids, :judge_risk, :judge_reason, :shadow_decision, :decision,"
-    " :execution_status, :ticket_id, :secret_attempted, :secret_delivered, :diverted,"
+    " :execution_status, :ticket_id, :secret_attempted, :secret_delivered, :echo_excluded,"
+    " :diverted,"
     " :trace_back_id, :atlas_techniques, CAST(:latency_ms AS jsonb), :forensic_status,"
     " :client_ip_hash, :priority_alert)"
 )
@@ -81,6 +83,7 @@ class EventRow:
     ticket_id: str | None = None
     secret_attempted: bool = False
     secret_delivered: bool = False
+    echo_excluded: bool = False  # the output held the secret but the student had typed it (E-53)
     diverted: bool = False
     trace_id: str | None = None
     trace_back_id: str | None = None
@@ -152,6 +155,7 @@ async def insert_event(conn: AsyncConnection, row: EventRow) -> str:
             "ticket_id": row.ticket_id,
             "secret_attempted": row.secret_attempted,
             "secret_delivered": row.secret_delivered,
+            "echo_excluded": row.echo_excluded,
             "diverted": row.diverted,
             "trace_back_id": row.trace_back_id,
             "atlas_techniques": list(row.atlas_techniques),

@@ -291,14 +291,18 @@ class ReplyDivert:
     net: NetworkFields
 
 
-def _delivered(turn: Turn, message: str, extra: tuple[str, ...] = ()) -> bool:
+def _delivery(turn: Turn, message: str, extra: tuple[str, ...] = ()) -> tuple[bool, bool]:
+    """(secret_delivered, echo_excluded) over the cumulative visible output (C-10, C-11): the
+    secret reached the student and it counts, or it reached them but they had typed it."""
     visible = [*turn.visible_new, *extra]
     if not visible:
-        return False
+        return False, False
     ctx = turn.ctx
     leak = scan_cumulative(ctx.visible_output, "\n".join(visible), ctx.secret)
-    typed = (*ctx.student_inputs, message)
-    return leak is not None and not leak.partial and not echo_excluded(typed, ctx.secret)
+    if leak is None or leak.partial:
+        return False, False
+    echoed = echo_excluded((*ctx.student_inputs, message), ctx.secret)
+    return not echoed, echoed
 
 
 def _rows(
@@ -372,10 +376,10 @@ async def finish(
     divert: ReplyDivert | None = None,
 ) -> TurnResult:
     shown = (reply,) if status == "replied" and reply else ()
-    delivered = _delivered(turn, message, shown)
+    delivered, echoed = _delivery(turn, message, shown)
     events = list(turn.later_events)
-    if events and delivered:
-        events[-1] = replace(events[-1], secret_delivered=True)
+    if events and (delivered or echoed):
+        events[-1] = replace(events[-1], secret_delivered=delivered, echo_excluded=echoed)
     result = turn.result(status, reply, delivered)
     withheld = divert.withheld if divert else None
     rows = _rows(turn, message, bot, status == "replied", withheld)
@@ -396,7 +400,7 @@ async def _park(
     """Park the turn on a Review decision (C-01): see `review.py`."""
     ticket_id = new_ticket_id()
     events = [*turn.later_events, replace(_event(turn, checked, "held"), ticket_id=ticket_id)]
-    delivered = _delivered(turn, message)
+    delivered, _ = _delivery(turn, message)
     if delivered:
         events[-1] = replace(events[-1], secret_delivered=True)
     result = turn.result("awaiting_review", None, delivered, ticket_id)

@@ -74,6 +74,7 @@ async def _session(
     extra: RuleForm | None = None,
     review_timeout_s: int = 120,
     pattern_version: int = 0,
+    sub: str = "auth0|rp",
 ) -> tuple[str, str]:
     await seed(engine)
     async with engine.begin() as conn:
@@ -81,9 +82,9 @@ async def _session(
             (
                 await conn.execute(
                     text(
-                        "INSERT INTO users (auth0_sub, role) VALUES ('auth0|rp', 'student')"
-                        " RETURNING id"
-                    )
+                        "INSERT INTO users (auth0_sub, role) VALUES (:sub, 'student') RETURNING id"
+                    ),
+                    {"sub": sub},
                 )
             ).scalar_one()
         )
