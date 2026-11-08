@@ -124,6 +124,21 @@ async def test_m2x09_sixth_round_never_runs() -> None:
     assert (turn.reply, turn.rounds) == ("Final answer.", 5)
 
 
+async def test_the_final_request_tells_the_model_the_limit_is_reached_and_is_not_stored() -> None:
+    """Found in the D-06 real-Gemini rehearsal: with tools off and no word on why, the model kept
+    asking for a tool (`UNEXPECTED_TOOL_CALL`, no text) and the turn became "Not sent"."""
+    looping = [ChatResult(content=None, tool_calls=[_call(i)]) for i in range(5)]
+    llm = ScriptedLLM(chat_answers=[*looping, ChatResult(content="Here is what I found.")])
+    turn = await _turn(llm, Recorder())
+    last = llm.chat_calls[-1].messages[-1]
+    assert last.role == "user" and "tool" in (last.content or "").lower()
+    assert "limit" in (last.content or "").lower()
+    assert all(m is not last and m.content != last.content for m in turn.new_messages)
+    assert all(
+        "limit" not in (m.content or "").lower() for c in llm.chat_calls[:-1] for m in c.messages
+    )  # earlier rounds do not carry it
+
+
 # --- M2-X10: history window ----------------------------------------------------------------------
 
 

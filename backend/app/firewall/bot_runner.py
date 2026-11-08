@@ -28,6 +28,12 @@ from app.firewall.limits import BOT_HISTORY_MESSAGES, tool_rounds_exhausted
 from app.llm.base import ChatMessage, ChatModel, ChatResult, LLMError, ToolCall
 
 BOT_CALL_TIMEOUT_S = 15.0  # per model call; the arena gives the whole turn 30 s
+# Said to the model on the last request only, when tools are off. Without it a real model keeps
+# asking for a tool and answers with no text (Gemini `UNEXPECTED_TOOL_CALL`). Never stored.
+TOOL_LIMIT_NOTICE = (
+    "The tool limit for this turn is reached and no more tools can be called. "
+    "Reply to the student now, in plain text, with what you have."
+)
 
 
 @dataclass(frozen=True)
@@ -139,7 +145,12 @@ async def _loop(
 ) -> BotTurn:
     while True:
         tools_on = not tool_rounds_exhausted(round_index)
-        result = await _chat(llm, model, messages, declarations if tools_on else [], timeout_s)
+        asked = (
+            messages
+            if tools_on
+            else (*messages, ChatMessage(role="user", content=TOOL_LIMIT_NOTICE))
+        )
+        result = await _chat(llm, model, asked, declarations if tools_on else [], timeout_s)
         if not tools_on or not result.tool_calls:
             reply = ChatMessage(role="assistant", content=result.content or "")
             return BotTurn(result.content or "", False, round_index, (*added, reply))
