@@ -96,8 +96,13 @@ def _layer2_points(history: RiskyHistorySignals | None) -> int:
     return history.user_tool_events_points + history.prior_divert_points + history.similarity_points
 
 
+def layer12_score(layer1_score: int, history: RiskyHistorySignals | None) -> int:
+    """Layers 1 and 2 together, capped: what `judge_needed` is asked about."""
+    return min(MAX_SCORE, layer1_score + _layer2_points(history))
+
+
 def _score(inp: GateInput) -> int:
-    layer12 = min(MAX_SCORE, inp.layer1.score + _layer2_points(inp.history))
+    layer12 = layer12_score(inp.layer1.score, inp.history)
     judged = max(layer12, inp.judge.risk) if inp.judge is not None else layer12
     if inp.judge_error:
         judged = max(judged, inp.thresholds["deny"])

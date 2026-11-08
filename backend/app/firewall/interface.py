@@ -96,6 +96,7 @@ class RealFirewall:
             risky=self._risky,
             decoys=self._decoys,
             tracer=self._tracer,
+            judge=self._judge,
         )
 
     async def check_ticket(self, owner_ref: str, ticket_id: str) -> TicketResult:

@@ -1,7 +1,10 @@
 """Per-item checks for one turn (M2 B-08; PRD §7.1, §7.6, §9.3; spec AEGIS-DOM-112).
 
-Pure functions: each one runs limits, rules, Sentinel layer 1, the B-01 leak scan and the
-Gatekeeper for one checked item and returns a `Checked` record. The pipeline acts on it.
+Each check runs limits, rules, Sentinel layer 1, the B-01 leak scan, then (Strict, and Off in
+shadow; C-08) the risky-history lookup and the judge through `Sentinel`, then the Gatekeeper,
+for one checked item, and returns a `Checked` record. The pipeline acts on it. The record
+carries the event ID the item's event will use (the ports are given the same ID) and the
+layer 2 and 3 results for that event.
 
 - input check: the student's message (rules on `player_message` and `session_history`);
 - tool-call check: canonicalize, argument limits, rules on `bot_tool_call`, B-01 on the
@@ -13,18 +16,19 @@ Gatekeeper for one checked item and returns a `Checked` record. The pipeline act
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 
 from app.contracts.common import Stage
 from app.firewall.canonical import CanonicalCall, CanonicalError, canonicalize
 from app.firewall.context import TurnContext
-from app.firewall.events import SourceTrust
+from app.firewall.events import SourceTrust, new_event_id
 from app.firewall.gatekeeper import GateDecision, GateInput, decide
 from app.firewall.leak import LeakMatch, scan, scan_cumulative
 from app.firewall.limits import check_args, check_text, cumulative_exceeded
 from app.firewall.rules import Evaluation, RuleSubject, evaluate
+from app.firewall.sentinel import Intel, Sentinel
 from app.firewall.sentinel_l1 import Layer1Input, layer1
 from app.firewall.textnorm import storable
 from app.llm.base import ToolCall
@@ -40,6 +44,8 @@ class Checked:
     call_id: str | None = None
     call: CanonicalCall | None = None
     leak: LeakMatch | None = None
+    event_id: str = field(default_factory=new_event_id)
+    intel: Intel = field(default_factory=Intel)
 
     @property
     def allowed(self) -> bool:
@@ -55,21 +61,50 @@ def _evaluate(ctx: TurnContext, *subjects: RuleSubject) -> Evaluation:
     )
 
 
-def _gate(ctx: TurnContext, rules: Evaluation, signals: Layer1Input, **flags: Any) -> GateDecision:
+async def _gate(
+    ctx: TurnContext,
+    rules: Evaluation,
+    signals: Layer1Input,
+    sentinel: Sentinel | None,
+    event_id: str,
+    stage: Stage,
+    text: str,
+    call: CanonicalCall | None = None,
+    **flags: Any,
+) -> tuple[GateDecision, Intel]:
     scored = layer1(replace(signals, rule_hits=rules.hits), ctx.weights)
-    return decide(
+    if sentinel is None:
+        intel = Intel(latency_ms={"rules": round(rules.elapsed_ms)})
+    else:
+        intel = await sentinel.assess(
+            ctx,
+            event_id=event_id,
+            stage=stage,
+            text=text,
+            layer1_score=scored.score,
+            call=call,
+            rules_ms=rules.elapsed_ms,
+        )
+    gate = decide(
         GateInput(
             mode=ctx.mode,
             thresholds=ctx.thresholds,
             divert_enabled=ctx.divert_enabled,
             layer1=scored,
             rules=rules,
+            history=intel.history,
+            history_error=intel.history_error,
+            judge=intel.judge,
+            judge_error=intel.judge_error,
             **flags,
         )
     )
+    return gate, intel
 
 
-def check_input(ctx: TurnContext, message: str, now: datetime) -> Checked:
+async def check_input(
+    ctx: TurnContext, message: str, now: datetime, sentinel: Sentinel | None = None
+) -> Checked:
     limited = check_text("player_text", message, ctx.mode)
     turn_count = len(ctx.student_inputs) + 1
     rules = _evaluate(
@@ -85,34 +120,44 @@ def check_input(ctx: TurnContext, message: str, now: datetime) -> Checked:
         earlier_denies=ctx.earlier_denies,
         recent_message_times=(*ctx.student_times, now),
     )
-    gate = _gate(ctx, rules, signals, limit_exceeded=limited.action != "ok")
-    return Checked("input_check", "player", gate, limited.text)
+    event_id = new_event_id()
+    gate, intel = await _gate(
+        ctx, rules, signals, sentinel, event_id, "input_check", limited.text,
+        limit_exceeded=limited.action != "ok",
+    )  # fmt: skip
+    return Checked("input_check", "player", gate, limited.text, event_id=event_id, intel=intel)
 
 
-def _invalid_call(ctx: TurnContext, call: ToolCall, call_id: str, now: datetime) -> Checked:
-    gate = _gate(
-        ctx, Evaluation((), (), 0.0), Layer1Input(raw_text="", now=now), canonical_error=True
-    )
+async def _invalid_call(ctx: TurnContext, call: ToolCall, call_id: str, now: datetime) -> Checked:
+    event_id = new_event_id()  # no layer 2 or 3: an invalid call is Deny in every mode
+    gate, intel = await _gate(
+        ctx, Evaluation((), (), 0.0), Layer1Input(raw_text="", now=now), None, event_id,
+        "tool_call_check", "", canonical_error=True,
+    )  # fmt: skip
     tool = storable(call.name)
-    return Checked("tool_call_check", "bot_output", gate, "", tool=tool, call_id=call_id)
+    return Checked(
+        "tool_call_check", "bot_output", gate, "", tool=tool, call_id=call_id,
+        event_id=event_id, intel=intel,
+    )  # fmt: skip
 
 
-def check_tool_call(
+async def check_tool_call(
     ctx: TurnContext,
     call: ToolCall,
     call_id: str,
     tool_results: Sequence[str],
     now: datetime,
     seen_before: Sequence[str] = (),
+    sentinel: Sentinel | None = None,
 ) -> Checked:
     canonical = canonicalize(call.name, call.arguments, ctx.tools, call_id)
     if isinstance(canonical, CanonicalError):
-        return _invalid_call(ctx, call, call_id, now)
+        return await _invalid_call(ctx, call, call_id, now)
     limited = check_args(canonical.args, ctx.mode)
     if limited.action == "truncate":  # Off only: re-canonicalize what will actually run
         canonical = canonicalize(call.name, dict(limited.args), ctx.tools, call_id)
         if isinstance(canonical, CanonicalError):
-            return _invalid_call(ctx, call, call_id, now)
+            return await _invalid_call(ctx, call, call_id, now)
     args_text = " ".join(str(v) for v in canonical.args.values())
     # Strict (and Off, for the shadow) scan tool arguments over everything already visible,
     # so a secret split across several visible tool effects is caught (M2-DD-37).
@@ -129,14 +174,23 @@ def check_tool_call(
         tool_result_read_this_turn=bool(tool_results),
         tool_results_this_turn=tuple(tool_results),
     )
-    gate = _gate(ctx, rules, signals, leak=leak, limit_exceeded=limited.action != "ok")
+    event_id = new_event_id()
+    gate, intel = await _gate(
+        ctx, rules, signals, sentinel, event_id, "tool_call_check", args_text, canonical,
+        leak=leak, limit_exceeded=limited.action != "ok",
+    )  # fmt: skip
     return Checked(
-        "tool_call_check", "bot_output", gate, args_text, canonical.tool, call_id, canonical, leak
-    )
+        "tool_call_check", "bot_output", gate, args_text, canonical.tool, call_id, canonical,
+        leak, event_id, intel,
+    )  # fmt: skip
 
 
-def check_output(
-    ctx: TurnContext, reply: str, seen_before: Sequence[str], now: datetime
+async def check_output(
+    ctx: TurnContext,
+    reply: str,
+    seen_before: Sequence[str],
+    now: datetime,
+    sentinel: Sentinel | None = None,
 ) -> Checked:
     limited = check_text("reply", storable(reply), ctx.mode)
     if ctx.mode == "basic":
@@ -147,5 +201,11 @@ def check_output(
     over = limited.action != "ok" or cumulative_exceeded(seen_chars, ctx.mode)
     rules = _evaluate(ctx, RuleSubject(applies_on="bot_reply", text=limited.text))
     signals = Layer1Input(raw_text=limited.text, now=now, earlier_denies=ctx.earlier_denies)
-    gate = _gate(ctx, rules, signals, leak=leak, limit_exceeded=over)
-    return Checked("output_check", "bot_output", gate, limited.text, leak=leak)
+    event_id = new_event_id()
+    gate, intel = await _gate(
+        ctx, rules, signals, sentinel, event_id, "output_check", limited.text,
+        leak=leak, limit_exceeded=over,
+    )  # fmt: skip
+    return Checked(
+        "output_check", "bot_output", gate, limited.text, leak=leak, event_id=event_id, intel=intel
+    )

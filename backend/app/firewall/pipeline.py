@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from app.contracts.common import ClientMeta, ExecutionStatus, Stage
 from app.contracts.firewall import FeedItem, PlayerStatus, ToolEffect, TurnResult
-from app.contracts.sentinel import RiskyHistoryPort
+from app.contracts.sentinel import JudgePort, RiskyHistoryPort
 from app.firewall.bot_runner import BotTurn, ToolStep, run_turn
 from app.firewall.canonical import CanonicalCall
 from app.firewall.checks import Checked, check_input, check_output, check_tool_call
@@ -34,10 +34,17 @@ from app.firewall.claims import claim_message, complete_claim, release_claim
 from app.firewall.context import TurnContext, load_context
 from app.firewall.decoys import DecoyGenerator, make_decoy, reply_decoy
 from app.firewall.divert import divert_call, record_divert
-from app.firewall.events import EventRow, SourceTrust, insert_event, row_from_decision
+from app.firewall.events import (
+    EventRow,
+    SourceTrust,
+    insert_event,
+    new_event_id,
+    row_from_decision,
+)
 from app.firewall.leak import echo_excluded, scan_cumulative
 from app.firewall.limits import check_text
 from app.firewall.review import Continuation, HeldKind, new_ticket_id, open_ticket
+from app.firewall.sentinel import Sentinel, make_sentinel
 from app.firewall.textnorm import storable
 from app.firewall.tool_exec import execute_tool
 from app.firewall.trace_back import NetworkFields, Tracer, insert_trace_back, new_trace_id
@@ -86,6 +93,7 @@ class Turn:
     risky: RiskyHistoryPort | None = None
     decoys: DecoyGenerator | None = None
     tracer: Tracer = field(default_factory=Tracer.disabled)
+    sentinel: Sentinel | None = None  # risky history and the judge (C-08)
 
     def result(
         self, status: PlayerStatus, reply: str | None, delivered: bool, ticket: str | None = None
@@ -113,6 +121,7 @@ def _event(
 ) -> EventRow:
     ctx = turn.ctx
     call = checked.call
+    primary = stage != "tool_executed"  # the check's own event carries its ID and layers 2-3
     row = row_from_decision(
         checked.gate,
         ctx.thresholds,
@@ -129,9 +138,12 @@ def _event(
         call_id=checked.call_id,
         args_hash=call.args_hash if call else None,
         secret_attempted=checked.leak is not None,
+        event_id=checked.event_id if primary else new_event_id(),
+        judge_reason=checked.intel.judge_reason if primary else None,
+        latency_ms=dict(checked.intel.latency_ms) if primary else {},
     )
-    if stage == "tool_executed":  # the shadow belongs to the check, so forensics flags once
-        return replace(row, shadow_decision=None, secret_attempted=False)
+    if not primary:  # the shadow belongs to the check, so forensics flags once
+        return replace(row, shadow_decision=None, secret_attempted=False, judge_risk=None)
     return row
 
 
@@ -140,7 +152,9 @@ def tool_hook(engine: AsyncEngine, turn: Turn, clock: Clock) -> Callable[..., An
         call_id = f"{turn.message_id}-r{round_index}-c{turn.calls_made}"
         turn.calls_made += 1
         seen = (*turn.ctx.visible_output, *turn.visible_new)
-        checked = check_tool_call(turn.ctx, call, call_id, turn.tool_results, clock(), seen)
+        checked = await check_tool_call(
+            turn.ctx, call, call_id, turn.tool_results, clock(), seen, turn.sentinel
+        )
         turn.checks.append(checked)
         tool = storable(call.name)
         if checked.gate.decision == "review" and checked.call is not None:
@@ -474,6 +488,7 @@ async def _run(
     risky: RiskyHistoryPort | None,
     decoys: DecoyGenerator | None,
     tracer: Tracer | None,
+    sentinel: Sentinel | None,
 ) -> TurnResult:
     turn = Turn(
         ctx=await load_context(engine, sid),
@@ -483,8 +498,9 @@ async def _run(
         risky=risky,
         decoys=decoys,
         tracer=tracer or Tracer.disabled(),
+        sentinel=sentinel,
     )
-    checked_input = check_input(turn.ctx, message, clock())
+    checked_input = await check_input(turn.ctx, message, clock(), sentinel)
     turn.checks.append(checked_input)
     if checked_input.gate.decision == "review":
         return await _park(engine, turn, message, checked_input.text, None, "input", checked_input)
@@ -571,7 +587,7 @@ async def after_bot(
     if bot.stopped or bot.reply is None:
         return await finish(engine, turn, message, bot, "blocked", None)
     seen = (*ctx.visible_output, *turn.visible_new)
-    checked_output = check_output(ctx, bot.reply, seen, clock())
+    checked_output = await check_output(ctx, bot.reply, seen, clock(), turn.sentinel)
     turn.checks.append(checked_output)
     if checked_output.gate.decision == "review":
         return await _park(engine, turn, message, user_text, bot, "reply", checked_output)
@@ -599,17 +615,31 @@ async def run_message(
     risky: RiskyHistoryPort | None = None,
     decoys: DecoyGenerator | None = None,
     tracer: Tracer | None = None,
+    judge: JudgePort | None = None,
+    judge_in_off: bool = False,
 ) -> TurnResult:
     """C2 `send_message` core. `client` is used only by Divert's trace-back (C-05, C-07);
-    `risky` receives the Divert record (C7); `decoys` is the decoy generator (C-06);
+    `risky` is the C7 risky history (Strict lookups, and the Divert record); `judge` is the C7
+    judge, used in Strict (and Off if `judge_in_off`); `decoys` is the decoy generator (C-06);
     `tracer` hashes the client IP and looks up its network (C-07)."""
+    sentinel = make_sentinel(risky, judge, judge_in_off)
     message = storable(message)  # NUL and lone surrogates cannot be stored (M2-DD-36)
     claim = await claim_message(engine, owner_ref, fw_session_id, message_id, message)
     if claim.stored is not None:
         return claim.stored
     try:
         return await _run(
-            engine, llm, fw_session_id, message_id, message, clock, client, risky, decoys, tracer
+            engine,
+            llm,
+            fw_session_id,
+            message_id,
+            message,
+            clock,
+            client,
+            risky,
+            decoys,
+            tracer,
+            sentinel,
         )
     except BaseException:
         await release_claim(engine, fw_session_id, message_id)

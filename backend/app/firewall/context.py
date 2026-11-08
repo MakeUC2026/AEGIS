@@ -25,7 +25,7 @@ from app.llm.base import ChatMessage, ToolCall
 
 _SESSION = (
     "SELECT s.owner_ref, s.mode, s.secret, m.manifest_id, m.level_id, m.thresholds, m.weights,"
-    " m.agent, m.bot_model_id, m.rule_set_version, m.divert_enabled"
+    " m.agent, m.bot_model_id, m.rule_set_version, m.pattern_version, m.divert_enabled"
     " FROM fw_sessions s JOIN fw_manifests m ON m.fw_session_id = s.fw_session_id"
     " WHERE s.fw_session_id = :sid"
 )
@@ -59,6 +59,7 @@ class TurnContext:
     tools: tuple[ToolDef, ...]
     system_prompt: str
     bot_model_id: str
+    pattern_version: int
     rules: tuple[RuleDef, ...]
     history: tuple[ChatMessage, ...]
     visible_output: tuple[str, ...]
@@ -160,6 +161,7 @@ async def load_context(
         tools=tuple(ToolDef(**t) for t in agent["tools"]),
         system_prompt=agent["system_prompt"],
         bot_model_id=row["bot_model_id"],
+        pattern_version=int(row["pattern_version"]),
         rules=tuple(r for r in rules if not r.deprecated),
         earlier_denies=int(denies),
         **conversation,

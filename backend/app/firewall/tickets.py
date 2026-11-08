@@ -49,12 +49,18 @@ from app.contracts.firewall import (
     TurnResult,
 )
 from app.contracts.firewall_admin import ConflictError, TicketDecision
-from app.contracts.sentinel import PatternCandidate, RiskyBehaviorRecord, RiskyHistoryPort
+from app.contracts.sentinel import (
+    JudgePort,
+    PatternCandidate,
+    RiskyBehaviorRecord,
+    RiskyHistoryPort,
+)
 from app.firewall.claims import complete_claim
 from app.firewall.continuation import continue_turn
 from app.firewall.decoys import DecoyGenerator
 from app.firewall.events import EventRow, insert_event
 from app.firewall.review import Continuation
+from app.firewall.sentinel import make_sentinel
 from app.llm.base import ChatModel
 
 TICKET_SWEEP_INTERVAL_S = 5.0
@@ -283,6 +289,7 @@ async def decide_ticket(
     admin_id: str,
     clock: Callable[[], datetime] = _utcnow,
     decoys: DecoyGenerator | None = None,
+    judge: JudgePort | None = None,
 ) -> TurnResult:
     async with engine.begin() as conn:
         row = (await conn.execute(text(_LOCK), {"t": ticket_id})).mappings().first()
@@ -326,6 +333,7 @@ async def decide_ticket(
         clock,
         risky,
         decoys,
+        make_sentinel(risky, judge),
     )
 
 

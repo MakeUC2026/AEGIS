@@ -73,6 +73,7 @@ async def _session(
     mode: str = "basic",
     extra: RuleForm | None = None,
     review_timeout_s: int = 120,
+    pattern_version: int = 0,
 ) -> tuple[str, str]:
     await seed(engine)
     async with engine.begin() as conn:
@@ -113,7 +114,9 @@ async def _session(
         secret=SECRET,
         mock_state_seed=build_mock_state(level_id, SECRET),
     )
-    handle = await register_session(engine, req, InMemoryRiskyHistory(), StubJudge())
+    risky = InMemoryRiskyHistory()
+    risky.pattern_version = pattern_version
+    handle = await register_session(engine, req, risky, StubJudge())
     return handle.fw_session_id, owner
 
 

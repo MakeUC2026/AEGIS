@@ -13,7 +13,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.arena.scenario_data import ATTACKER_MAILBOX, SYSTEM_PROMPT, TOOLS
-from app.arena.seed import BASIC_THRESHOLDS, DEFAULT_WEIGHTS, build_mock_state
+from app.arena.seed import (
+    BASIC_THRESHOLDS,
+    DEFAULT_WEIGHTS,
+    STRICT_THRESHOLDS,
+    build_mock_state,
+)
 from app.config import Settings, get_settings
 from app.contracts.common import ClientMeta
 from app.contracts.fakes import InMemoryRiskyHistory, StubJudge
@@ -103,6 +108,29 @@ async def test_a_whole_session_through_the_interface(engine: AsyncEngine) -> Non
     await fw.close_session(owner, sid)
     with pytest.raises(SessionClosed):
         await fw.send_message(owner, sid, "m2", "hi", ClientMeta())
+
+
+async def test_strict_uses_the_history_and_judge_ports_through_the_interface(
+    engine: AsyncEngine,
+) -> None:
+    await seed(engine)
+    owner = await _owner(engine)
+    risky, judge = InMemoryRiskyHistory(), StubJudge()
+    llm = ScriptedLLM(chat_answers=[ChatResult(content="Hello.")])
+    fw = RealFirewall(engine, llm, risky, judge)
+    base = _request(owner)
+    strict = base.model_copy(
+        update={
+            "level": base.level.model_copy(
+                update={"level_id": "lvl-3", "mode": "strict", "thresholds": STRICT_THRESHOLDS}
+            )
+        }
+    )
+    handle = await fw.register_session(strict)
+    result = await fw.send_message(owner, handle.fw_session_id, "m1", "hi", ClientMeta())
+    assert result.player_view.status == "replied"
+    assert [i.stage for i in risky.lookups] == ["input_check", "output_check"]
+    assert judge.assessed == []  # a harmless turn never reaches the judge
 
 
 async def test_without_an_api_key_every_turn_is_bot_unavailable(engine: AsyncEngine) -> None:

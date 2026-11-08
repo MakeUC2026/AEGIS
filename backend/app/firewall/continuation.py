@@ -37,6 +37,7 @@ from app.firewall.pipeline import (
     tool_hook,
 )
 from app.firewall.review import Continuation
+from app.firewall.sentinel import Sentinel
 from app.llm.base import ChatModel
 
 logger = logging.getLogger(__name__)
@@ -127,6 +128,7 @@ async def continue_turn(
     clock: Clock,
     risky: RiskyHistoryPort | None = None,
     decoys: DecoyGenerator | None = None,
+    sentinel: Sentinel | None = None,
 ) -> TurnResult:
     """`resolved` is the review's feed line; `held` carries the ticket's score, breakdown,
     rule IDs and ticket ID for the held tool's execution event."""
@@ -146,6 +148,7 @@ async def continue_turn(
         student_message=cont.student_message,  # no client data is kept with a parked turn
         risky=risky,
         decoys=decoys,
+        sentinel=sentinel,
     )
     message = cont.student_message
     try:
