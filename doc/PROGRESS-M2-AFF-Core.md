@@ -356,26 +356,26 @@ E-01 to E-04 are "as AFF v0.3". That document is not in this repo, so the expect
 
 ## 6. Acceptance criteria (PRD-mapped)
 
-- [ ] AC-1 PRD §2.1 metric 1 and §16.3 row 1: all three modes run end to end with every check recorded in `fw_events`.
-- [ ] AC-2 PRD §2.1 metric 2 and §16.3 row 2: all four actions fire and are enforced in Basic and Strict, and show as `shadow_decision` in Off.
-- [ ] AC-3 PRD §2.1 metric 3 and §16.3 row 3: Review at input, tool-call and reply stages; pending message returned; ok continues; not ok gives Human Deny; expiry denies.
-- [ ] AC-4 PRD §16.3 row 4: Divert writes risky behavior and trace-back, shows a decoy, never executes.
-- [ ] AC-5 PRD §16.3 row 5 (M2 side): Strict calls risky history on every item and the result changes a decision (E-50, with M3).
-- [ ] AC-6 PRD §15.1: fail closed, atomicity, concurrency, reproducibility, rules under 50 ms p95, information flow, each covered by a test.
-- [ ] AC-7 PRD §6.5 steps 1–4 pass with `ScriptedLLM` (deterministic) and on the real Gemini bot on the `integration` branch.
-- [ ] AC-8 C2, C3 and C6 implemented exactly to the frozen contracts. M1, M3 and M4 tests pass when they swap their fakes for M2's real code.
+- [x] AC-1 *Met 2026-11-08: Off, Basic and Strict end to end, every check recorded (Phase B, C, D-05 fixtures in all modes).* PRD §2.1 metric 1 and §16.3 row 1: all three modes run end to end with every check recorded in `fw_events`.
+- [x] AC-2 *Met 2026-11-08: All four actions enforced in Basic and Strict, shadowed in Off (D-05 fixtures).* PRD §2.1 metric 2 and §16.3 row 2: all four actions fire and are enforced in Basic and Strict, and show as `shadow_decision` in Off.
+- [x] AC-3 *Met 2026-11-08: Review at input, tool and reply, ok, Human Deny and expiry (C-02, C-03, D-02, D-06 on real Gemini).* PRD §2.1 metric 3 and §16.3 row 3: Review at input, tool-call and reply stages; pending message returned; ok continues; not ok gives Human Deny; expiry denies.
+- [x] AC-4 *Met 2026-11-08: Divert writes behaviour and trace-back, shows a decoy, never executes (C-05 to C-07; live in D-06).* PRD §16.3 row 4: Divert writes risky behavior and trace-back, shows a decoy, never executes.
+- [x] AC-5 *Met 2026-11-08: Strict calls M3's real risky history on every item and it changes a decision (C-13).* PRD §16.3 row 5 (M2 side): Strict calls risky history on every item and the result changes a decision (E-50, with M3).
+- [x] AC-6 *Met 2026-11-08: Fail closed, atomicity, concurrency, reproducibility (D-02), rules p95 (D-01), information flow (D-04).* PRD §15.1: fail closed, atomicity, concurrency, reproducibility, rules under 50 ms p95, information flow, each covered by a test.
+- [x] AC-7 *Met 2026-11-08: Steps 1 to 6 with ScriptedLLM (D-05) and on the real Gemini bot over HTTP (D-06, 2026-11-08).* PRD §6.5 steps 1–4 pass with `ScriptedLLM` (deterministic) and on the real Gemini bot on the `integration` branch.
+- [~] AC-8 *Full suite on `master` passes (exit 0), `alembic upgrade heads` on an empty database is clean; still open: M1's D-01 run with their fakes removed.* C2, C3 and C6 implemented exactly to the frozen contracts. M1, M3 and M4 tests pass when they swap their fakes for M2's real code.
 
 ---
 
 ## 7. Exit criteria for the final merge (all must be `[x]`)
 
 - [x] X-1 *Met: `0003` and the rule seed merged to `master` early (PR #12); Basic denied the poisoned-notes fixture attack with a logged score (55, R-003 and B-01, thresholds, forensics pending), with the real Gemini bot through M1's arena (B-11).* Gate 1 met: `0003` migration and rule seed merged, Basic denies a fixture attack with a logged score.
-- [ ] X-2 Gate 2 met: AC-1 to AC-5 checked on the `integration` branch with real M3 C7.
-- [ ] X-3 Every case in §5.1, §5.2 (M2 side) and §5.3 has a passing automated test.
-- [ ] X-4 Every acceptance item in §6 is checked.
-- [ ] X-5 CI green: ruff, pytest, gitleaks, `alembic upgrade heads` on an empty DB.
-- [ ] X-6 `app/firewall/` imports no FastAPI (D-03) and contains no real execution paths.
-- [ ] X-7 No file outside M2's ownership changed, except PR-approved contract changes.
+- [x] X-2 *Met 2026-11-08: C-13, 28 tests against M3's real C7; M3 and M4 are on `master`, so `master` is the integration branch.* Gate 2 met: AC-1 to AC-5 checked on the `integration` branch with real M3 C7.
+- [~] X-3 *The suite passes; the case-by-case map of §5 to tests is not written yet.* Every case in §5.1, §5.2 (M2 side) and §5.3 has a passing automated test.
+- [~] X-4 *AC-1 to AC-7 are met; AC-8 is open.* Every acceptance item in §6 is checked.
+- [~] X-5 *Locally clean on `master`: ruff, pytest, semgrep, pip-audit, `alembic upgrade heads` on an empty database. Not verified by me: the CI run and gitleaks.* CI green: ruff, pytest, gitleaks, `alembic upgrade heads` on an empty DB.
+- [x] X-6 *Met: the boundary tests (115) pass, including a transitive no-FastAPI import check; no real execution paths.* `app/firewall/` imports no FastAPI (D-03) and contains no real execution paths.
+- [x] X-7 *Met: the only file outside M2's area is `app/admin/router.py` (ConflictError becomes a 409), merged through PR #16.* No file outside M2's ownership changed, except PR-approved contract changes.
 - [x] X-8 `fixtures/attacks/m2_*.json` cover every PRD §6.5 demo step with expected decisions per mode.
 
 ---
