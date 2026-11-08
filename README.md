@@ -168,6 +168,12 @@ cd frontend
 npm ci && npm test
 ```
 
+**Laptop fallback (demo without the cloud):** from the repo root, after the `.env` and
+`dev_keys.py` steps above, run `docker compose up -d --build`. The API applies migrations and
+seeds the levels, secrets and demo accounts on start, then the app is at http://127.0.0.1:3000.
+Re-running keeps the same secrets. To start over, run `uv run python ../scripts/seed_demo.py --reset`
+from `backend/`.
+
 Run it: `uv run uvicorn --factory app.main:create_app --reload --port 8000` in `backend/`, and
 `npm run dev` in `frontend/`. Then open <http://localhost:3000> and pick a dev user.
 
