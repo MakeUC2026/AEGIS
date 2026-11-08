@@ -10,6 +10,7 @@ import {
   inputLocked,
   newMessageId,
   type SessionDetail,
+  shadowLabel,
   statusLine,
   type Turn,
   type TurnResponse,
@@ -189,7 +190,7 @@ export function ChatRoom({ sessionId }: { sessionId: string }) {
             {feed.map((f) => (
               <li key={f.key} data-decision={f.decision}>
                 {f.stage.replaceAll("_", " ")} · <strong>{f.decision}</strong>
-                {f.shadow_decision ? <> (would have {f.shadow_decision === "deny" ? "denied" : f.shadow_decision})</> : null}
+                {f.shadow_decision ? <> ({shadowLabel(f.shadow_decision)})</> : null}
                 {f.rule_ids.length ? <> · {f.rule_ids.join(", ")}</> : null} · {f.score_band}
               </li>
             ))}

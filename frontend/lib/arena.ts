@@ -3,12 +3,14 @@
 
 export type TurnStatus = "sent" | "replied" | "blocked" | "awaiting_review" | "human_denied" | "not_sent";
 
+export type ShadowDecision = "allow" | "deny" | "review" | "divert";
+
 export interface FeedItem {
   stage: string;
   decision: "allow" | "deny" | "review" | "human_deny";
   rule_ids: string[];
   score_band: "low" | "medium" | "high";
-  shadow_decision?: "allow" | "deny" | "review" | null;
+  shadow_decision?: ShadowDecision | null;
 }
 
 export interface ToolEffect {
@@ -109,4 +111,16 @@ export function browserFingerprintParts(): FingerprintParts {
     screen: `${window.screen.width}x${window.screen.height}`,
     platform: navigator.platform,
   };
+}
+
+const SHADOW_VERBS: Record<ShadowDecision, string> = {
+  allow: "allowed",
+  deny: "denied",
+  review: "sent to review",
+  divert: "diverted",
+};
+
+/** Off-mode feed line for what the firewall would have done (PRD D-02). */
+export function shadowLabel(decision: ShadowDecision): string {
+  return `would have ${SHADOW_VERBS[decision]}`;
 }
