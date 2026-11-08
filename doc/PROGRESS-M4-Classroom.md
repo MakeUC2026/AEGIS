@@ -315,3 +315,4 @@ M4 provides no in-process contract to the other machines.
 | Time (H+) | Gate | Done | Blocked or at risk | Next |
 | --- | --- | --- | --- | --- |
 | H0 | — | Doc created | — | Phase A |
+| A (backend) | — | A-01 to A-05 done: rubric r1 (hash pinned), quiz models + public model + answer key, MCQ grading, untrusted wrapper, 12 grader samples. 77 new tests, 98% coverage of app/quiz | — | A-06 UI shells (after review) |
