@@ -1,6 +1,8 @@
 """Integration fixtures: a fresh TimescaleDB+pgvector database per test run (I-6).
 
 DB URL: $TEST_DATABASE_URL, else built from the repo-root .env (docker compose `db`).
+DB name: $AEGIS_TEST_DB (default `aegis_test`), so two machines' suites on one host (for
+example M1 and M2) never drop each other's database. It must start with `aegis_test`.
 Migrations run through the real `alembic upgrade heads` CLI, exactly as CI does.
 """
 
@@ -8,6 +10,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 import subprocess
 from collections.abc import AsyncIterator
 
@@ -18,7 +21,18 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 BACKEND = pathlib.Path(__file__).resolve().parents[2]
 ROOT_ENV = BACKEND.parent / ".env"
-TEST_DB = "aegis_test"
+_TEST_DB_NAME = re.compile(r"aegis_test[a-z0-9_]{0,40}")
+
+
+def test_db_name() -> str:
+    """The database this run drops and recreates. Never anything but an aegis_test* name."""
+    name = os.environ.get("AEGIS_TEST_DB", "aegis_test")
+    if not _TEST_DB_NAME.fullmatch(name):
+        raise ValueError(f"AEGIS_TEST_DB must match {_TEST_DB_NAME.pattern}, got {name!r}")
+    return name
+
+
+TEST_DB = test_db_name()
 M1_TABLES = (
     "usage",
     "results",

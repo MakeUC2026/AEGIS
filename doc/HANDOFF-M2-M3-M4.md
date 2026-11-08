@@ -57,6 +57,18 @@ models or test real Auth0 sign-in, get `GEMINI_API_KEY` and the `AUTH0_*` web-ap
 project owner privately and paste them into your `.env`. Model IDs are already pinned in
 `.env.example`. Set `AEGIS_AUTH_MODE=auth0` for real sign-in.
 
+**Two machines on one computer (for example M1 and M2):**
+
+- Give each branch its own git worktree. From the repo root, run
+  `git worktree add ../AEGIS-m2 -b m2/aff-core origin/master`. Then repeat the setup steps in that
+  folder: copy `.env`, `uv sync`, `npm ci`, and the `frontend/.env.local` link from the repo root.
+- Give each one its own test database, so parallel test runs never drop each other's:
+  `AEGIS_TEST_DB=aegis_test_m2 uv run pytest`. The name must start with `aegis_test`. Both can
+  share the one Compose `db` container.
+- Use different ports for the second one's dev servers (`--port 8001` for the API, `npm run dev -- -p 3001`),
+  and set `AEGIS_API_URL=http://127.0.0.1:8001` in that worktree's `.env`. Ports 3000 and 8000 may be
+  in use by the Compose stack.
+
 ## 3. Fakes and seams
 
 Your branch starts with every seam faked (`AEGIS_USE_FAKES=firewall,read,admin,risky,judge,arena`).
