@@ -340,7 +340,7 @@ async def test_expiry_wins_at_the_deadline(engine: AsyncEngine) -> None:
         )
     with pytest.raises(ConflictError):
         await decide_ticket(engine, ScriptedLLM(), InMemoryRiskyHistory(), tid, "ok", admin)
-    assert (await _ticket(engine, tid))["status"] == "pending"  # the sweeper expires it (C-03)
+    assert (await _ticket(engine, tid))["status"] == "expired"  # expired on the spot (C-03)
 
 
 async def test_an_unknown_ticket_is_not_found(engine: AsyncEngine) -> None:

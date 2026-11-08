@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from app.contracts.common import Decision, Stage
 from app.contracts.firewall import NotFound, SessionClosed
 from app.firewall.events import EventRow, insert_event
+from app.firewall.tickets import expire_session_tickets
 from app.firewall.views import expired_result
 
 _LOCK_SESSION = (
@@ -26,11 +27,6 @@ _LOCK_SESSION = (
     " WHERE s.fw_session_id = :sid FOR UPDATE OF s"
 )
 _CLOSE = "UPDATE fw_sessions SET status = 'closed', closed_at = now() WHERE fw_session_id = :sid"
-_EXPIRE_TICKETS = (
-    "UPDATE fw_tickets SET status = 'expired', decided_at = now()"
-    " WHERE fw_session_id = :sid AND status = 'pending'"
-    " RETURNING ticket_id, message_id"
-)
 _FINISH_HELD = (
     "UPDATE fw_claims SET status = 'done', result = CAST(:result AS jsonb), updated_at = now()"
     " WHERE fw_session_id = :sid AND status = 'held'"
@@ -77,13 +73,8 @@ async def close_session(engine: AsyncEngine, owner_ref: str, fw_session_id: str)
     async with engine.begin() as conn:
         session = await _lock(conn, owner_ref, fw_session_id)
         await conn.execute(text(_CLOSE), {"sid": fw_session_id})
-        expired = (await conn.execute(text(_EXPIRE_TICKETS), {"sid": fw_session_id})).all()
-        for ticket_id, message_id in expired:
-            await insert_event(
-                conn,
-                _event(session, fw_session_id, "review_resolved", "deny", message_id, ticket_id),
-            )
-        await conn.execute(
+        await expire_session_tickets(conn, fw_session_id)  # same expiry as the sweep (C-03)
+        await conn.execute(  # a held claim with no pending ticket left: never expected
             text(_FINISH_HELD),
             {"sid": fw_session_id, "result": expired_result().model_dump_json()},
         )
