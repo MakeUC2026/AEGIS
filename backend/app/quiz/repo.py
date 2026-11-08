@@ -315,3 +315,28 @@ async def attempts(
     return [
         AttemptRecord(str(r[0]), str(r[1]), str(r[2]), r[3], r[4], r[5], r[6], r[7]) for r in rows
     ]
+
+
+async def chosen_map(conn: AsyncConnection, quiz_id: uuid.UUID) -> dict[str, int]:
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT question_id, chosen_index FROM quiz_questions"
+                " WHERE quiz_id = :q AND chosen_index IS NOT NULL"
+            ),
+            {"q": quiz_id},
+        )
+    ).all()
+    return {r[0]: r[1] for r in rows}
+
+
+async def record_choice(conn: AsyncConnection, quiz_id: uuid.UUID, qid: str, index: int) -> bool:
+    """Store the first answer only. False when the question was already answered."""
+    done = await conn.execute(
+        text(
+            "UPDATE quiz_questions SET chosen_index = :i, answered_at = now()"
+            " WHERE quiz_id = :q AND question_id = :id AND type = 'mcq' AND chosen_index IS NULL"
+        ),
+        {"q": quiz_id, "id": qid, "i": index},
+    )
+    return done.rowcount == 1

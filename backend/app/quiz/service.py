@@ -18,12 +18,21 @@ from app.contracts.firewall_read import FirewallReadPort
 from app.contracts.users import CurrentUser
 from app.quiz import repo
 from app.quiz.context import build_context
-from app.quiz.errors import NotAllowed, QuizMissing, SessionMissing
+from app.quiz.errors import BadInput, Conflict, NotAllowed, QuizMissing, SessionMissing
 from app.quiz.generator import generate_quiz
+from app.quiz.grading import InvalidAnswer, grade_answer
 from app.quiz.llm import QuizRuntime
 from app.quiz.models import PublicQuiz
 from app.quiz.repo import QuizRow
-from app.quiz.schemas import AssignOut, AttemptList, AttemptRow, MineList, MineRow, QuizView
+from app.quiz.schemas import (
+    AnswerOut,
+    AssignOut,
+    AttemptList,
+    AttemptRow,
+    MineList,
+    MineRow,
+    QuizView,
+)
 
 
 @dataclass(frozen=True)
@@ -230,4 +239,44 @@ async def mine_view(deps: QuizDeps, user: CurrentUser) -> MineList:
             )
             for r in records
         ]
+    )
+
+
+async def _owned_open_quiz(conn: AsyncConnection, user: CurrentUser, quiz_id: str) -> QuizRow:
+    """The caller's own quiz, still in progress. Teachers read quizzes but never act in them."""
+    qid = repo.parse_uuid(quiz_id)
+    row = await repo.get_quiz(conn, qid) if qid else None
+    if row is None:
+        raise QuizMissing("quiz not found")
+    if row.user_id != user.id:
+        raise NotAllowed("forbidden")
+    if row.status != "in_progress":
+        raise Conflict("this quiz is not open for answers")
+    return row
+
+
+async def answer_mcq(
+    deps: QuizDeps, user: CurrentUser, quiz_id: str, question_id: str, index: int
+) -> AnswerOut:
+    async with deps.engine.begin() as conn:
+        row = await _owned_open_quiz(conn, user, quiz_id)
+        qid = uuid.UUID(row.id)
+        spec = await repo.load_spec(conn, qid, row.rubric_version)
+        if question_id not in {q.id for q in spec.questions}:
+            raise QuizMissing("question not found")
+        answered = await repo.chosen_map(conn, qid)
+        try:
+            result = grade_answer(spec, answered, question_id, index)
+        except InvalidAnswer as exc:
+            raise BadInput(str(exc)) from None
+        if not result.already_answered and not await repo.record_choice(
+            conn, qid, question_id, index
+        ):  # lost a race: the other request's answer is the first one
+            result = grade_answer(spec, await repo.chosen_map(conn, qid), question_id, index)
+    return AnswerOut(
+        question_id=question_id,
+        chosen_index=result.chosen_index,
+        correct=result.correct,
+        explanation=result.explanation,
+        already_answered=result.already_answered,
     )

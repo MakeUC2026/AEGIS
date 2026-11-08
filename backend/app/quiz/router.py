@@ -20,7 +20,15 @@ from app.quiz import service
 from app.quiz.errors import QuizError
 from app.quiz.generator import QuizGenerationFailed
 from app.quiz.llm import QuizRuntime, get_runtime
-from app.quiz.schemas import AssignOut, AttemptList, MineList, QuizView, StartIn
+from app.quiz.schemas import (
+    AnswerIn,
+    AnswerOut,
+    AssignOut,
+    AttemptList,
+    MineList,
+    QuizView,
+    StartIn,
+)
 from app.quiz.service import QuizDeps
 
 router = APIRouter(prefix="/api/quiz", tags=["quiz"])
@@ -30,6 +38,7 @@ Runtime = Annotated[QuizRuntime, Depends(get_runtime)]
 Caller = Annotated[CurrentUser, Depends(require_user)]
 Teacher = Annotated[CurrentUser, Depends(require_role("teacher"))]
 PathId = Annotated[str, Path(max_length=64, pattern=r"^[A-Za-z0-9_-]+$")]
+QuestionId = Annotated[str, Path(pattern=r"^q[0-9]{1,2}$")]
 
 BUDGET_MESSAGE = (
     "The daily model budget is used up, so quizzes cannot be made right now. Try again tomorrow."
@@ -77,6 +86,23 @@ async def assign_quiz(body: StartIn, user: Teacher, engine: Engine, runtime: Run
 async def get_quiz(quiz_id: PathId, user: Caller, engine: Engine, runtime: Runtime) -> QuizView:
     try:
         return await service.get_quiz_view(_deps(engine, runtime), user, quiz_id)
+    except _HANDLED as exc:
+        raise _http(exc) from None
+
+
+@router.post("/quizzes/{quiz_id}/questions/{question_id}/answer")
+async def answer(
+    quiz_id: PathId,
+    question_id: QuestionId,
+    body: AnswerIn,
+    user: Caller,
+    engine: Engine,
+    runtime: Runtime,
+) -> AnswerOut:
+    try:
+        return await service.answer_mcq(
+            _deps(engine, runtime), user, quiz_id, question_id, body.index
+        )
     except _HANDLED as exc:
         raise _http(exc) from None
 

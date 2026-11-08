@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, StrictInt
 
 from app.contracts.common import Contract
 from app.quiz.models import PublicQuiz
@@ -73,3 +73,17 @@ class MineRow(Contract):
 
 class MineList(Contract):
     items: list[MineRow]
+
+
+class AnswerIn(Contract):
+    index: StrictInt
+
+
+class AnswerOut(Contract):
+    """Correctness and this question's explanation only (M4-X22)."""
+
+    question_id: str
+    chosen_index: int
+    correct: bool
+    explanation: str
+    already_answered: bool
