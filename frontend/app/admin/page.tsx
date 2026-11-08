@@ -1,6 +1,5 @@
-import { Placeholder } from "@/components/shell/Placeholder";
+import { redirect } from "next/navigation";
 
-// Gate 0 placeholder; owned by M3 from here on.
 export default function Page() {
-  return <Placeholder title="Firewall console" owner="M3" />;
+  redirect("/admin/review");
 }
