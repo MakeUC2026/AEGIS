@@ -18,7 +18,7 @@ ENV = pathlib.Path(__file__).resolve().parents[1] / ".env"
 DEV_VARS = {
     "AEGIS_AUTH_MODE": "dev",
     "AEGIS_FAKE_SCRIPT": "dev",
-    "AEGIS_USE_FAKES": "firewall,read,admin,risky,judge",
+    "AEGIS_USE_FAKES": "firewall,read,admin,risky,judge,arena",
     "AEGIS_API_URL": "http://127.0.0.1:8000",
 }
 

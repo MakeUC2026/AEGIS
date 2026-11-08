@@ -2,12 +2,39 @@
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 
 from app.contracts.fakes import FakeFirewall
 from app.firewall import ports
 from app.llm.base import ChatMessage, ChatResult, ToolCall
 from app.llm.scripted import ScriptedLLM, UnexpectedLLMCall
+
+
+def _documented_default() -> str:
+    env_example = pathlib.Path(__file__).resolve().parents[3] / ".env.example"
+    line = next(
+        ln for ln in env_example.read_text().splitlines() if ln.startswith("AEGIS_USE_FAKES=")
+    )
+    return line.split("=", 1)[1].split("#", 1)[0].strip()
+
+
+def test_documented_default_resolves_every_seam(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A machine that copies .env.example must be able to reach every seam on day one,
+    # before any real provider lands (G0 checkpoint).
+    monkeypatch.setenv("AEGIS_USE_FAKES", _documented_default())
+    ports.reset()
+    for getter in (
+        ports.get_firewall,
+        ports.get_firewall_read,
+        ports.get_firewall_admin,
+        ports.get_risky_history,
+        ports.get_judge,
+        ports.get_arena_service,
+    ):
+        getter()
+    ports.reset()
 
 
 def test_fakes_selected_by_env(monkeypatch: pytest.MonkeyPatch) -> None:
