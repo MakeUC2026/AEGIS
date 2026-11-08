@@ -143,33 +143,35 @@ Each session stores a **snapshot** of its config, so later edits to a level neve
 
 ## Getting started
 
-> Fill in the TODO items as the setup is finalized.
+**The full setup guide is [doc/HANDOFF-M2-M3-M4.md](doc/HANDOFF-M2-M3-M4.md).** It says which folder
+every command runs in. Short version (Docker, Git, uv and Node.js 24 required):
 
 ```bash
-# 1. Clone
-git clone <REPO_URL>
-cd injection-arena
+# repo root
+git clone https://github.com/MakeUC2026/AEGIS.git && cd AEGIS
+cp .env.example .env                      # then set AEGIS_PROXY_SECRET (openssl rand -hex 32)
+docker compose up -d db
 
-# 2. Environment variables
-cp .env.example .env
-# edit .env: database URL, LLM API key, session secret
+# backend/
+cd backend
+uv sync
+uv run python ../scripts/dev_keys.py      # dev sign-in keys and dev mode into .env
+uv run alembic upgrade heads
+uv run pytest
 
-# 3. Database (TODO: choose docker compose or local install)
-# docker compose up -d db
+# repo root (not backend/)
+cd ..
+ln -sf ../.env frontend/.env.local
 
-# 4. Backend
-# cd backend
-# python -m venv .venv && source .venv/bin/activate
-# pip install -r requirements.txt
-# uvicorn app.main:app --reload
-
-# 5. Frontend
-# cd frontend
-# npm install
-# npm run dev
+# frontend/
+cd frontend
+npm ci && npm test
 ```
 
-Seed data: load fake users (one teacher, several students) and realistic fake sessions so the Classroom can be built without waiting for the Arena. (TODO: add seed script.)
+Run it: `uv run uvicorn --factory app.main:create_app --reload --port 8000` in `backend/`, and
+`npm run dev` in `frontend/`. Then open <http://localhost:3000> and pick a dev user.
+
+The plan lives in `doc/`: the PRD, and one progress doc per machine (M1 to M4).
 
 ## Repository layout
 
@@ -199,8 +201,8 @@ injection-arena/
 
 ## Team workflow
 
-- Branch per feature: `feature/<area>-<short-name>` (for example `feature/firewall-taint-rule`). Open a pull request into `main`; one teammate reviews before merging.
-- Keep commits small. Do not push directly to `main` after the first working path exists.
+- Branch per feature: `feature/<area>-<short-name>` (for example `feature/firewall-taint-rule`). Open a pull request into `master`; one teammate reviews before merging.
+- Keep commits small. Do not push directly to `master` after the first working path exists.
 - Never commit secrets. Keep `.env` out of version control and share keys privately.
 - Get one level working end to end (attack, block, quiz, dashboard row) before adding more levels.
 - Cut order if time runs short: optional AI injection detector, then secret-pattern scan, then extra levels, then stretch items.
