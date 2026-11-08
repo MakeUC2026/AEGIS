@@ -32,3 +32,20 @@ async def names_for(db: AsyncEngine | AsyncConnection, ids: Iterable[str]) -> di
     else:
         rows = (await db.execute(_SQL, {"ids": wanted})).all()
     return {str(r[0]): r[1] for r in rows}
+
+
+_BY_NAME = text("SELECT id, name FROM users WHERE name = ANY(:names) ORDER BY created_at")
+
+
+async def ids_by_name(db: AsyncEngine, names: Iterable[str]) -> dict[str, str]:
+    """`{name: id}` for the given display names in one SELECT (dev seed only). The earliest
+    user wins when two share a name."""
+    wanted = sorted(set(names))
+    if not wanted:
+        return {}
+    async with db.connect() as conn:
+        rows = (await conn.execute(_BY_NAME, {"names": wanted})).all()
+    found: dict[str, str] = {}
+    for user_id, name in rows:
+        found.setdefault(name, str(user_id))
+    return found

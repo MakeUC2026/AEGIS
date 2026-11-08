@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.auth.deps import require_role, require_user
 from app.classroom.access import get_engine
 from app.classroom.detail import SessionForbidden, SessionNotFound, session_detail_view
+from app.classroom.dev_seed import dev_seed_hook
 from app.classroom.insights import insights_view
 from app.classroom.schemas import (
     InsightQuery,
@@ -28,7 +29,9 @@ from app.contracts.firewall import NotFound
 from app.contracts.users import CurrentUser
 from app.firewall.ports import get_arena_service, get_firewall_read
 
-router = APIRouter(prefix="/api/classroom", tags=["classroom"])
+router = APIRouter(
+    prefix="/api/classroom", tags=["classroom"], dependencies=[Depends(dev_seed_hook)]
+)
 
 Engine = Annotated[AsyncEngine, Depends(get_engine)]
 Caller = Annotated[CurrentUser, Depends(require_user)]
