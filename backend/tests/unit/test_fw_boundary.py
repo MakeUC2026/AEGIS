@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import ast
 import pathlib
+import subprocess
+import sys
 
 import pytest
 
@@ -58,3 +60,42 @@ def test_no_dynamic_execution_or_os_process_calls(path: pathlib.Path) -> None:
             assert not (func.value.id == "os" and func.attr in FORBIDDEN_OS), (
                 f"{path.name}: os.{func.attr}()"
             )
+
+
+# --- D-03: the package as a whole (PRD §3.3) --------------------------------------------------
+
+ALL_FILES = sorted(FIREWALL.glob("*.py"))
+PRD_FORBIDDEN = {"fastapi", "starlette", "subprocess", "socket"}
+
+
+@pytest.mark.parametrize("path", ALL_FILES, ids=lambda p: p.name)
+def test_no_file_in_the_package_imports_a_web_framework_a_shell_or_a_socket(
+    path: pathlib.Path,
+) -> None:
+    """The PRD's wording is the whole `app/firewall/`, including the files other machines own."""
+    bad = {m for m in _imports(ast.parse(path.read_text())) if m.split(".")[0] in PRD_FORBIDDEN}
+    assert not bad, f"{path.name} imports {sorted(bad)}"
+
+
+def test_loading_the_whole_package_pulls_in_no_web_framework() -> None:
+    """Not just direct imports: nothing the package loads, transitively, is FastAPI or Starlette.
+    (`socket` and `subprocess` cannot be checked this way: asyncio loads them itself.)"""
+    root = str(FIREWALL.parents[1])
+    script = (
+        "import importlib, pkgutil, sys\n"
+        f"sys.path.insert(0, {root!r})\n"
+        "import app.firewall as pkg\n"
+        "for m in pkgutil.iter_modules(pkg.__path__):\n"
+        "    if m.name != 'ports':  # M1's seam module lazily imports the arena (a router)\n"
+        "        importlib.import_module('app.firewall.' + m.name)\n"
+        "print(sorted(n for n in sys.modules if n.split('.')[0] in ('fastapi', 'starlette')))\n"
+    )
+    done = subprocess.run(  # noqa: S603 - fixed argv, no shell, no input
+        [sys.executable, "-I", "-c", script],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "[]", done.stdout
