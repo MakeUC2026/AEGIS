@@ -323,7 +323,9 @@ async def test_x34_expired_ticket_is_409(ctx: Ctx) -> None:
 
     ctx.fw.decide_ticket = expired  # type: ignore[method-assign]
     r = await ctx.call("POST", "/api/admin/tickets/tk-1/decision", {"decision": "ok"})
-    assert r.status_code == 409 and r.json()["detail"] == "ticket is no longer pending: expired"
+    # No fw_tickets row here (fake C6), so the reason falls back to already_decided; the expired
+    # reason from fw_tickets is covered in test_m3_phase_d.py::test_review_ticket_state_machine.
+    assert r.status_code == 409 and r.json()["detail"]["reason"] == "already_decided"
 
 
 async def test_ticket_decision_value_checked(ctx: Ctx) -> None:

@@ -9,10 +9,12 @@ rows. Drafts and risky patterns are M3's and are audited in `decisions.py` (M3-X
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable
+from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -29,6 +31,7 @@ from app.contracts.arena import (
 from app.contracts.common import Decision, Mode
 from app.contracts.firewall import NotFound
 from app.contracts.firewall_admin import (
+    OPERATORS_BY_CHECK,
     RULE_WEIGHT_MAX,
     RULE_WEIGHT_MIN,
     ConflictError,
@@ -148,16 +151,40 @@ class Reasons(_Body):
 
 
 @router.get("/tickets")
-async def list_tickets() -> list[TicketQueueItem]:
-    return await ports.get_firewall_admin().list_pending_tickets()
+async def list_tickets(response: Response) -> list[TicketQueueItem]:
+    """Priority alerts (99+) first, then the soonest expiry. `x-server-time` is the server clock
+    the countdown corrects for skew (plan §10)."""
+    tickets = await ports.get_firewall_admin().list_pending_tickets()
+    response.headers["x-server-time"] = datetime.now(UTC).isoformat()
+    return sorted(tickets, key=lambda t: (not t.priority_alert, t.expires_at))
+
+
+# M3 may read `fw_tickets` (§0.2 rule 2): it tells "expired" from "already decided" for the UI.
+_TICKET_STATE = text(
+    "SELECT status = 'expired' OR (status = 'pending' AND expires_at <= now()) AS expired"
+    " FROM fw_tickets WHERE ticket_id = :t"
+)
+_CONFLICT_MESSAGE = {
+    "expired": "This ticket expired before it was decided; it counts as Deny.",
+    "already_decided": "This ticket was already decided by another admin.",
+}
+
+
+async def _conflict_reason(engine: AsyncEngine, ticket_id: str) -> str:
+    async with engine.connect() as conn:
+        expired = (await conn.execute(_TICKET_STATE, {"t": ticket_id})).scalar_one_or_none()
+    return "expired" if expired else "already_decided"
 
 
 @router.post("/tickets/{ticket_id}/decision")
-async def decide_ticket(ticket_id: str, body: TicketDecisionBody, user: Admin) -> dict[str, str]:
+async def decide_ticket(
+    ticket_id: str, body: TicketDecisionBody, user: Admin, engine: EngineDep
+) -> dict[str, str]:
     try:
         await _run(ports.get_firewall_admin().decide_ticket(ticket_id, body.decision, user.id))
-    except ConflictError as exc:  # already decided or expired (409)
-        detail = f"ticket is no longer pending: {exc}"
+    except ConflictError as exc:  # already decided or expired (409, E-46, M3-X34)
+        reason = await _conflict_reason(engine, ticket_id)
+        detail = {"reason": reason, "message": _CONFLICT_MESSAGE[reason]}
         raise HTTPException(status.HTTP_409_CONFLICT, detail) from exc
     return {"ticket_id": ticket_id, "decision": body.decision}
 
@@ -168,6 +195,36 @@ async def decide_ticket(ticket_id: str, body: TicketDecisionBody, user: Admin) -
 @router.get("/rules")
 async def list_rules() -> list[RuleDef]:
     return await ports.get_firewall_admin().list_rules()
+
+
+@router.get("/rules/operators")
+async def rule_operators() -> dict[str, Any]:
+    """The client-side operator table for the Rules form (M3-X36); the API still re-checks."""
+    return {
+        "operators_by_check": {k: sorted(v) for k, v in OPERATORS_BY_CHECK.items()},
+        "weight_min": RULE_WEIGHT_MIN,
+        "weight_max": RULE_WEIGHT_MAX,
+    }
+
+
+_RULE_ID = re.compile(r"(R-[0-9]{3}|B-[0-9]{2})")
+_RULE_HISTORY = text(
+    "SELECT rule_id, version, set_version, builtin, enabled, deprecated, form, created_at,"
+    " created_by::text AS created_by FROM rules WHERE rule_id = :r ORDER BY version DESC"
+)
+
+
+@router.get("/rules/{rule_id}/history")
+async def rule_history(rule_id: str, engine: EngineDep) -> list[dict[str, Any]]:
+    """Every stored version of one rule, newest first, deprecations included (M3-X37). Reads
+    M2's append-only `rules` table directly (§0.2 rule 2)."""
+    if not _RULE_ID.fullmatch(rule_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+    async with engine.connect() as conn:
+        rows = [dict(r) for r in (await conn.execute(_RULE_HISTORY, {"r": rule_id})).mappings()]
+    if not rows:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+    return rows
 
 
 @router.post("/rules", status_code=status.HTTP_201_CREATED)
@@ -316,9 +373,11 @@ _FORENSICS = text(
     " ORDER BY created_at DESC LIMIT :limit"
 )
 _AUDIT = text(
-    "SELECT id, time, actor_id::text AS actor_id, entity, entity_id, action, before, after"
-    " FROM audit_log WHERE CAST(:entity AS text) IS NULL OR entity = CAST(:entity AS text)"
-    " ORDER BY id DESC LIMIT :limit"
+    "SELECT a.id, a.time, a.actor_id::text AS actor_id, u.name AS actor_name, a.entity,"
+    " a.entity_id, a.action, a.before, a.after FROM audit_log a"
+    " LEFT JOIN users u ON u.id = a.actor_id"
+    " WHERE CAST(:entity AS text) IS NULL OR a.entity = CAST(:entity AS text)"
+    " ORDER BY a.id DESC LIMIT :limit"
 )
 
 

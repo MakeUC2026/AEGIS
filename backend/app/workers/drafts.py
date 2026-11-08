@@ -102,14 +102,21 @@ def _rule_errors(form: RuleForm, source: dict[str, Any], benign: Benign) -> list
     if errors:
         return errors
     stage = STAGE_OF.get(form.applies_on)  # session_history applies at every stage
-    if stage is not None and stage != source.get("stage"):
+    subject = source.get("text") or ""
+    # A rule on the player message may come from a later stage of the same turn (PRD §6.5 step
+    # 5: Strict denies the reply, the fix blocks the ask); it is checked against that message.
+    # Only a text check: a player message has no tool name or arguments (Codex Phase D R1).
+    from_turn = (
+        form.applies_on == "player_message"
+        and form.checks == "text"
+        and source.get("player_text") is not None
+    )
+    tool, args = source.get("tool"), source.get("canonical_args")
+    if from_turn:
+        subject, tool, args = source["player_text"], None, None
+    if stage is not None and stage != source.get("stage") and not from_turn:
         errors.append("rule does not apply at the source event's stage")
-    elif not rule_matches(
-        form,
-        text=source.get("text") or "",
-        tool=source.get("tool"),
-        args=source.get("canonical_args"),
-    ):
+    elif not rule_matches(form, text=subject, tool=tool, args=args):
         errors.append("rule does not match its original event")
     if not benign.messages and not benign.calls:
         errors.append("no benign fixtures to check against")
@@ -157,7 +164,10 @@ def _reads_redacted(kind: DraftKind, body: dict[str, Any], source: dict[str, Any
             return False
         return any(isinstance(c, dict) and reads(c.get("arg")) for c in conditions)
     if body.get("checks") == "text":
-        return "text" in changed or _uses_placeholder(source.get("text"))
+        field = "text"
+        if body.get("applies_on") == "player_message" and source.get("player_text") is not None:
+            field = "player_text"
+        return field in changed or _uses_placeholder(source.get(field))
     if body.get("checks") == "named_argument":
         return reads(body.get("argument_name"))
     return False

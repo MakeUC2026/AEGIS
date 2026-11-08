@@ -91,6 +91,7 @@ def redacted(event: ForensicEvent) -> ForensicEvent:
         update={
             "text": redact(event.text, s),
             "context_excerpt": redact(event.context_excerpt, s),
+            "player_text": None if event.player_text is None else redact(event.player_text, s),
             "canonical_args": redact_obj(event.canonical_args, s),
             "tool": None if event.tool is None else redact(event.tool, s),
             "secret": None,
@@ -107,6 +108,7 @@ def source_snapshot(event: ForensicEvent, original: ForensicEvent | None = None)
         "tool": event.tool,
         "canonical_args": event.canonical_args,
         "text": event.text,
+        "player_text": event.player_text,
     }
     if original is not None:
         # By each real key's sanitized name, never by position: sanitizing can merge keys.
@@ -120,6 +122,8 @@ def source_snapshot(event: ForensicEvent, original: ForensicEvent | None = None)
         }
         if event.text != original.text:
             changed.add("text")
+        if event.player_text != original.player_text:
+            changed.add("player_text")
         snapshot["redacted_fields"] = sorted(changed)
     return snapshot
 
@@ -293,6 +297,9 @@ class ForensicWorker:
         existing = (await conn.execute(_EXISTING, {"e": event.event_id})).scalar_one_or_none()
         if existing is not None:  # redelivered: never a second report, draft or model call
             await claim.finish(existing)
+            return
+        if event.unredactable:  # fail closed (M3-X24, I-2): nothing unredacted reaches a model
+            await self._write_failed(claim, "session secret missing: event cannot be redacted")
             return
         safe = redacted(event)
         result = await self._analyse(event)

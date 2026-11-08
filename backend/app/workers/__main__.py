@@ -1,8 +1,5 @@
-"""Worker entry point (`python -m app.workers`): the forensic worker plus its jobs (M3 C-01, C-08).
-
-Until M2's `0003_firewall_core` lands there is no `fw_events` to read, so the worker runs on an
-empty `InMemoryEventSource`: it listens, polls and runs the jobs, and analyses nothing. When
-`0003` lands, swap in the real `fw_events` source (see `events.py`).
+"""Worker entry point (`python -m app.workers`): the forensic worker plus its jobs (M3 C-01, C-08),
+reading M2's `fw_events` through `FwEventSource`.
 """
 
 from __future__ import annotations
@@ -16,7 +13,7 @@ from app.db.engine import get_engine
 from app.firewall import ports
 from app.llm.budget import DailyBudget
 from app.llm.gemini import GeminiClient
-from app.workers.events import InMemoryEventSource
+from app.workers.events import FwEventSource
 from app.workers.forensics import ForensicWorker, run_worker
 from app.workers.jobs import (
     BACKFILL_INTERVAL_S,
@@ -39,8 +36,7 @@ async def main() -> None:
         DailyBudget(engine, settings.daily_llm_budget),
         settings.gemini_embedding_model_id,
     )
-    source = InMemoryEventSource(engine)
-    log.warning("no fw_events yet (M2 0003 not landed): the forensic worker has nothing to read")
+    source = FwEventSource(engine)
     worker = ForensicWorker(source, client, model, client)
     skipped: set[str] = set()
 
