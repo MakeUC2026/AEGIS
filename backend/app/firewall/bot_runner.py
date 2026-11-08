@@ -8,7 +8,9 @@ Runs one student turn against the bot model through M1's `ChatModel.chat_with_to
 - up to 5 tool-call rounds; after the 5th, one final call with tools disabled, and any tool
   calls in it are ignored (M2-X09);
 - every proposed tool call goes to `on_tool_call` first (the pipeline's tool-call check);
-  it returns the result to feed back, or stops the turn (deny, hold, divert, error);
+  it returns the result to feed back, stops the turn (deny, divert, error), or holds it for
+  review: the turn then ends with `held` set and the calls after the held one in the same
+  model message kept unchecked in `remaining_calls` (C-01);
 - tool results go back wrapped as untrusted data (delimited and labelled, M2-DD-28);
 - each `ToolCall` (with Gemini's `thoughtSignature`) is sent back unchanged on the next call;
 - a model error or timeout raises `BotUnavailable`, so the caller releases the claim and the
@@ -30,7 +32,7 @@ BOT_CALL_TIMEOUT_S = 15.0  # per model call; the arena gives the whole turn 30 s
 
 @dataclass(frozen=True)
 class ToolStep:
-    kind: Literal["result", "stop"]
+    kind: Literal["result", "stop", "hold"]
     content: str = ""
 
     @classmethod
@@ -41,6 +43,10 @@ class ToolStep:
     def stop(cls) -> ToolStep:
         return cls("stop")
 
+    @classmethod
+    def hold(cls) -> ToolStep:
+        return cls("hold")
+
 
 @dataclass(frozen=True)
 class BotTurn:
@@ -48,6 +54,8 @@ class BotTurn:
     stopped: bool
     rounds: int  # tool-call rounds used
     new_messages: tuple[ChatMessage, ...]  # assistant and tool messages added this turn
+    held: bool = False  # stopped by a tool call parked for review
+    remaining_calls: tuple[ToolCall, ...] = ()  # proposed after the held call, not checked
 
 
 ToolHook = Callable[[ToolCall, int], Awaitable[ToolStep]]
@@ -113,8 +121,11 @@ async def run_turn(
             role="assistant", content=result.content, tool_calls=list(result.tool_calls)
         )
         messages, added = (*messages, assistant), (*added, assistant)
-        for call in result.tool_calls:
+        for i, call in enumerate(result.tool_calls):
             step = await on_tool_call(call, round_index)
+            if step.kind == "hold":
+                rest = tuple(result.tool_calls[i + 1 :])
+                return BotTurn(None, True, round_index, added, held=True, remaining_calls=rest)
             if step.kind == "stop":
                 return BotTurn(None, True, round_index, added)
             tool_msg = ChatMessage(

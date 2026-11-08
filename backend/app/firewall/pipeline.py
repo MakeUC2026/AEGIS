@@ -6,7 +6,10 @@ events, conversation rows, claim result). A bot failure or any error releases th
 re-raises, so the arena can retry the same message ID; call IDs are deterministic
 (`<message_id>-r<round>-c<n>`), so a retry never runs a tool twice.
 
-Temporary until Phase C: a Review (C-01) or Divert (C-05) decision fails closed (blocked).
+A Review decision at any stage parks the turn (C-01, `review.py`): a pending ticket with the
+continuation, the claim held, and `awaiting_review` returned at once.
+
+Temporary until C-05: a Divert decision fails closed (blocked).
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from app.firewall.context import TurnContext, load_context
 from app.firewall.events import EventRow, SourceTrust, insert_event, row_from_decision
 from app.firewall.leak import echo_excluded, scan_cumulative
 from app.firewall.limits import check_text
+from app.firewall.review import Continuation, HeldKind, new_ticket_id, open_ticket
 from app.firewall.textnorm import storable
 from app.firewall.tool_exec import execute_tool
 from app.firewall.views import turn_result
@@ -60,6 +64,8 @@ class _Turn:
     visible_new: list[str] = field(default_factory=list)
     visible_by_call: dict[str, str] = field(default_factory=dict)
     calls_made: int = 0
+    held: Checked | None = None  # a tool call parked for review
+    held_call: ToolCall | None = None
 
 
 def _event(
@@ -101,6 +107,14 @@ def _tool_hook(engine: AsyncEngine, turn: _Turn, clock: Clock) -> Callable[..., 
         checked = check_tool_call(turn.ctx, call, call_id, turn.tool_results, clock(), seen)
         turn.checks.append(checked)
         tool = storable(call.name)
+        if checked.gate.decision == "review" and checked.call is not None:
+            turn.held, turn.held_call = checked, call
+            turn.effects.append(
+                ToolEffect(
+                    call_id=call_id, tool=tool, state="awaiting_review", visible_content=None
+                )
+            )
+            return ToolStep.hold()
         if not checked.allowed or checked.call is None:
             turn.effects.append(
                 ToolEffect(call_id=call_id, tool=tool, state="blocked", visible_content=None)
@@ -220,6 +234,68 @@ async def _finish(
     return result
 
 
+async def _park(
+    engine: AsyncEngine,
+    turn: _Turn,
+    message: str,
+    user_text: str,
+    bot: BotTurn | None,
+    kind: HeldKind,
+    checked: Checked,
+) -> TurnResult:
+    """Park the turn on a Review decision (C-01): see `review.py`."""
+    ticket_id = new_ticket_id()
+    events = [*turn.later_events, replace(_event(turn, checked, "held"), ticket_id=ticket_id)]
+    delivered = _delivered(turn, message)
+    if delivered:
+        events[-1] = replace(events[-1], secret_delivered=True)
+    result = turn_result(
+        "awaiting_review", None, turn.effects, turn.checks, delivered, ticket_id=ticket_id
+    )
+    call = checked.call if kind == "tool_call" else None
+    cont = Continuation(
+        kind=kind,
+        student_message=message,
+        user_text=user_text,
+        messages=list(bot.new_messages) if bot else [],
+        round_index=bot.rounds if bot else 0,
+        calls_made=turn.calls_made,
+        held_call=turn.held_call if call else None,
+        held_call_id=checked.call_id if call else None,
+        held_args_hash=call.args_hash if call else None,
+        remaining_calls=list(bot.remaining_calls) if bot else [],
+        held_reply=checked.text if kind == "reply" else None,
+        feed=list(result.player_view.defense_feed),
+        effects=list(turn.effects),
+        rule_ids=list(result.facts.rule_ids),
+        secret_attempted=result.facts.secret_attempted,
+        tool_results=list(turn.tool_results),
+        visible_new=list(turn.visible_new),
+        visible_by_call=dict(turn.visible_by_call),
+    )
+    ctx = turn.ctx
+    async with engine.begin() as conn:
+        await open_ticket(
+            conn,
+            ticket_id=ticket_id,
+            fw_session_id=ctx.fw_session_id,
+            message_id=turn.message_id,
+            manifest_id=ctx.manifest_id,
+            stage=checked.stage,
+            gate=checked.gate,
+            cont=cont,
+            held_args=dict(call.args) if call else None,
+        )
+        for event in events:
+            await insert_event(conn, event)
+        for row in _rows(turn, message, bot, replied=False):  # in_history false until approved
+            await conn.execute(text(_CONVERSATION), row)
+        await complete_claim(
+            conn, ctx.fw_session_id, turn.message_id, result, held=True, ticket_id=ticket_id
+        )
+    return result
+
+
 async def _commit(
     conn: AsyncConnection,
     turn: _Turn,
@@ -240,10 +316,12 @@ async def _run(
     turn = _Turn(ctx=await load_context(engine, sid), message_id=message_id)
     checked_input = check_input(turn.ctx, message, clock())
     turn.checks.append(checked_input)
+    if checked_input.gate.decision == "review":
+        return await _park(engine, turn, message, checked_input.text, None, "input", checked_input)
     turn.later_events.append(
         _event(turn, checked_input, "executed" if checked_input.allowed else "not_executed")
     )
-    if not checked_input.allowed:  # deny, or review/divert until Phase C (fail closed)
+    if not checked_input.allowed:  # deny, or divert until C-05 (fail closed)
         return await _finish(engine, turn, message, None, "blocked", None)
     ctx = turn.ctx
     bot = await run_turn(
@@ -255,11 +333,15 @@ async def _run(
         ctx.tools,
         _tool_hook(engine, turn, clock),
     )
+    if bot.held and turn.held is not None:
+        return await _park(engine, turn, message, checked_input.text, bot, "tool_call", turn.held)
     if bot.stopped or bot.reply is None:
         return await _finish(engine, turn, message, bot, "blocked", None)
     seen = (*ctx.visible_output, *turn.visible_new)
     checked_output = check_output(ctx, bot.reply, seen, clock())
     turn.checks.append(checked_output)
+    if checked_output.gate.decision == "review":
+        return await _park(engine, turn, message, checked_input.text, bot, "reply", checked_output)
     allowed = checked_output.allowed
     turn.later_events.append(
         _event(turn, checked_output, "executed" if allowed else "not_executed")
