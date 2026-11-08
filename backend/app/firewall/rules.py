@@ -25,6 +25,7 @@ from app.firewall.textnorm import normalize
 
 RULE_TIME_CAP_MS = 50
 _REGEX_CACHE_SIZE = 512
+_READINGS_CACHE_SIZE = 16  # a few texts per turn; each is up to a few thousand characters
 _MS_PER_S = 1000
 
 FailureKind = Literal["bad_regex", "bad_value", "timeout"]
@@ -80,6 +81,14 @@ def _compile(pattern: str) -> Any:
     options.case_sensitive = False
     options.log_errors = False
     return re2.compile(pattern, options)
+
+
+@functools.lru_cache(maxsize=_READINGS_CACHE_SIZE)
+def _readings(text: str) -> tuple[str, ...]:
+    """Both readings of a text (invisible characters removed, and read as spaces; M2-DD-17),
+    worked out once however many rules look at it: normalizing is the costly part of a rule."""
+    plain, spaced = normalize(text), normalize(text, invisible_as_space=True)
+    return (plain,) if plain == spaced else (plain, spaced)
 
 
 def _regex(pattern: str) -> Any:
@@ -161,14 +170,14 @@ def _matches(form: RuleForm, subject: RuleSubject) -> bool:
             raise _Failure("bad_value", "workspace operators need a resolved path argument")
         return path.inside_workspace if op == "inside_workspace" else not path.inside_workspace
     # Both readings of the text: invisible characters removed, and read as spaces (M2-DD-17).
-    texts = {normalize(str(field)), normalize(str(field), invisible_as_space=True)}
+    texts = _readings(str(field))
     if op == "contains":
         needle = normalize(_as_str(form.value))
         return any(needle in text for text in texts)
     if op == "equals":
         return normalize(_as_str(form.value)) in texts
     if op == "in_list":
-        return bool(texts & {normalize(v) for v in _as_list(form.value)})
+        return bool(set(texts) & {normalize(v) for v in _as_list(form.value)})
     if op == "regex":
         pattern = _regex(_as_str(form.value))
         return any(pattern.search(text) is not None for text in texts)
