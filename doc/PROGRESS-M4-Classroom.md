@@ -269,23 +269,23 @@ Items M1 cannot finish without M4. M1 tracks them in its §4c and ticks its side
 
 ## 6. Acceptance criteria (PRD-mapped)
 
-- [ ] AC-1 PRD §16.3 row 7: teacher sees sessions, session detail and insights, and rotates a secret.
-- [ ] AC-2 PRD §16.3 row 8 and §2.1 metric 6: a quiz is generated, answered, graded, and the feedback is shown to the student and the teacher.
+- [x] AC-1 PRD §16.3 row 7: teacher sees sessions, session detail and insights, and rotates a secret. (On fakes: Playwright as Cho in B8 and D1/D2, API tests B2-B6.)
+- [x] AC-2 PRD §16.3 row 8 and §2.1 metric 6: a quiz is generated, answered, graded, and the feedback is shown to the student and the teacher.
 - [ ] AC-3 PRD §1.3 item 4: teacher opens a session, launches a quiz, the student completes it, the teacher reads the grade and feedback, first on fakes (Gate 3) and then on real M1, M2 and M3 code.
 - [x] AC-4 PRD §13.5: grader hardening results recorded with the targets in D-03 met.
-- [ ] AC-5 PRD §15.3: secret redacted in context and questions; transcript wrapped as untrusted; feedback writer never sees student text.
+- [x] AC-5 PRD §15.3: secret redacted in context and questions; transcript wrapped as untrusted; feedback writer never sees student text.
 - [ ] AC-6 PRD §16.3 row 9 (M4 part): every classroom and quiz route checked server-side for student, teacher and firewall admin.
 
 ---
 
 ## 7. Exit criteria for the final merge (all must be `[x]`)
 
-- [ ] X-1 Gate 1 met: `0005` migration merged; the §3.3 contract additions accepted into `contracts/` by M1 before the freeze.
+- [x] X-1 Gate 1 met: `0005` migration merged; the §3.3 contract additions accepted into `contracts/` by M1 before the freeze.
 - [ ] X-2 Gate 3 met: dashboard and quiz complete on fakes (D-04).
-- [ ] X-3 Every case in §5.1 and §5.2 has a passing automated test.
+- [x] X-3 Every case in §5.1 and §5.2 has a passing automated test.
 - [ ] X-4 Every acceptance item in §6 is checked.
 - [ ] X-5 CI green: ruff, pytest, `tsc --noEmit`, `next build`, gitleaks, `alembic upgrade heads`.
-- [ ] X-6 M4 reads other parts only through C3, C4 and C8 (no SQL on other parts' tables; check with a grep test).
+- [x] X-6 M4 reads other parts only through C3, C4 and C8 (no SQL on other parts' tables; check with a grep test).
 - [ ] X-7 No file outside M4's ownership changed, except PR-approved contract changes.
 
 ---
@@ -333,4 +333,5 @@ Items M1 cannot finish without M4. M1 tracks them in its §4c and ticks its side
 | D3 (grader hardening, live) | G3 prep | A-05 samples (4 good, 8 gaming) graded on real Gemini, pro model `gemini-3.1-pro-preview` (flash `gemini-3.5-flash`), through `grade_free_response`. Run 1: gaming 8/8 at 0/12, good 4/4 at 12/12. Stability run, 3 runs per sample (36 grader calls): gaming 24/24 within 3/12 (all 0), good 12/12 within 9/12 (all 12). Targets met with NO prompt change (grader prompt and rubric untouched). Test: `tests/live/test_m4_quiz_live.py::test_grader_hardening_samples_on_real_gemini`, opt-in `AEGIS_LIVE=1`, `AEGIS_LIVE_RUNS=n` | All gaming samples score 0, all good score 12: the samples are easy to separate, so a tougher set (partial answers, subtle paraphrase of the key) would tell us more before the demo | D4 |
 | D4 (end to end, dev, real Gemini) | G3 prep | Cho assigned a quiz on Ben's benign-only session, Ben saw it as Assigned, started it (generation about 15 s), answered 5 MCQs and 2 free-response prompts with follow-ups, finished (grading about 25 s), got 13/17 (76%) and feedback; Cho then saw the row as Done 13/17 in the list, the attempt in the session block, per-item grades (MCQ 1/5, items 3/3 each) and the feedback. The answer key for the benign session said no attack happened (X16). Desktop and 375 wide, no overflow, no 5xx; the only 4xx were the 403s the role checks provoked on purpose | AC-3 on fakes shown; AC-3 on real M1/M2/M3 waits for integration. X-2 not ticked until the whole-UI consolidation | UI consolidation pass, then Phase E/integration |
 | Pre-push review + hardening | G3 prep | Independent security review of the M4 diff: no CRITICAL or HIGH. Fixed the two MEDIUM spend findings: (1) one follow-up turn or finish at a time per quiz (non-blocking Postgres advisory lock, a concurrent request gets 409 before any model call); (2) one generation at a time per student and session (409), and at most 6 generated quizzes per student per hour (429 with a clear message; resume and assigned-but-not-started do not count). New `tests/integration/m4/test_m4_quiz_limits.py` (5 tests); the old simultaneous-start test now expects one generator call and a 409 for the loser. Frontend shows the API's 409 message. Backend 407 to 412 tests, 97% coverage of app/quiz + app/classroom; frontend 96 to 97 | Not fixed, by decision: answers sent while grading is running are not in the stored MCQ score (needs a `grading` status and a CHECK change in 0005); 404 vs 403 session-ID oracle (UUIDs); failed generations are not counted against the hourly cap; encoded or split secret leaks rely on M2's `redact_for_session`; confirm a request body size cap at the proxy; `app_env` default is M1's file. `pyproject.toml` still omits M4 from coverage (request to M1); coverage needs `concurrency = greenlet,thread` to see async DB code | Push |
+| Exit criteria check on merged master | G3 prep | Master (M1, M3, M4 merged; M2 only its early seam): backend 974 passed and 2 skipped, frontend 117 passed, ruff, tsc, eslint and `next build` clean. Ticked: AC-1, AC-2, AC-5, X-1, X-3, X-6. Left open: AC-3 and X-4 (real M1/M2/M3 run needs M2 aff-core on master and fakes off), AC-6 (wants a route-by-role matrix test), X-2 (after the whole-UI consolidation), X-5 (CI run on GitHub not yet seen), X-7 (only exception is the empty `backend/tests/live/__init__.py`) | M2 aff-core not merged yet | AC-6 matrix test, UI consolidation, integration (INT-1 to INT-4) |
 
