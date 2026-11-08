@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from app.classroom.dev_seed import add_forensic, add_level, add_session, add_ticket
-from tests.m4_support import World, world  # noqa: F401
+from tests.m4_support import World
 
 BANNED_KEYS = re.compile(r"(^|_)(ip|subnet|asn|country|user_?agent|fingerprint)(_|$)", re.I)
 
@@ -46,8 +46,8 @@ async def _detail(w: World, sid: str, who):  # type: ignore[no-untyped-def]
     return await w.client.get(f"/api/classroom/sessions/{sid}", headers=who.headers)
 
 
-async def test_teacher_gets_every_block(world: World) -> None:  # noqa: F811
-    s, cho, dee, ada, _ = await _setup(world)
+async def test_teacher_gets_every_block(world: World) -> None:
+    s, cho, *_ = await _setup(world)
     resp = await _detail(world, s.id, cho)
     assert resp.status_code == 200
     body = resp.json()
@@ -74,18 +74,18 @@ async def test_teacher_gets_every_block(world: World) -> None:  # noqa: F811
     assert body["session"]["quiz_status"] == "not_taken"
 
 
-async def test_x04_firewall_admin_can_read_detail(world: World) -> None:  # noqa: F811
+async def test_x04_firewall_admin_can_read_detail(world: World) -> None:
     s, _, dee, *_ = await _setup(world)
     resp = await _detail(world, s.id, dee)
     assert resp.status_code == 200 and resp.json()["view"] == "staff"
 
 
-async def test_x02_student_cannot_open_another_students_session(world: World) -> None:  # noqa: F811
+async def test_x02_student_cannot_open_another_students_session(world: World) -> None:
     s, _, _, _, ben = await _setup(world)
     assert (await _detail(world, s.id, ben)).status_code == 403
 
 
-async def test_owner_student_gets_a_trimmed_view_without_staff_only_blocks(world: World) -> None:  # noqa: F811
+async def test_owner_student_gets_a_trimmed_view_without_staff_only_blocks(world: World) -> None:
     s, _, _, ada, _ = await _setup(world)
     body = (await _detail(world, s.id, ada)).json()
     assert body["view"] == "student"
@@ -96,7 +96,7 @@ async def test_owner_student_gets_a_trimmed_view_without_staff_only_blocks(world
 
 
 async def test_unknown_session_is_404_and_malformed_ids_are_422_never_500(
-    world: World,  # noqa: F811
+    world: World,
 ) -> None:
     _, cho, *_ = await _setup(world)
     for sid in ("00000000-0000-4000-8000-00000000ffff", "nope"):
@@ -105,33 +105,33 @@ async def test_unknown_session_is_404_and_malformed_ids_are_422_never_500(
         assert (await _detail(world, sid, cho)).status_code == 422
 
 
-async def test_requires_auth(world: World) -> None:  # noqa: F811
+async def test_requires_auth(world: World) -> None:
     s, *_ = await _setup(world)
     assert (await world.client.get(f"/api/classroom/sessions/{s.id}")).status_code == 401
 
 
-async def test_x06_no_network_data_anywhere_in_the_response(world: World) -> None:  # noqa: F811
+async def test_x06_no_network_data_anywhere_in_the_response(world: World) -> None:
     s, cho, *_ = await _setup(world)
     body = (await _detail(world, s.id, cho)).json()
     offending = {k for k in _keys(body) if BANNED_KEYS.search(k)}
     assert offending == set()
 
 
-async def test_x19_hostile_text_comes_back_verbatim_as_json_not_html(world: World) -> None:  # noqa: F811
+async def test_x19_hostile_text_comes_back_verbatim_as_json_not_html(world: World) -> None:
     s, cho, *_ = await _setup(world)
     resp = await _detail(world, s.id, cho)
     assert resp.headers["content-type"].startswith("application/json")
     assert resp.json()["transcript"][0]["text"].startswith("<script>alert(1)</script>")
 
 
-async def test_missing_manifest_gives_null_config_not_500(world: World) -> None:  # noqa: F811
+async def test_missing_manifest_gives_null_config_not_500(world: World) -> None:
     s, cho, *_ = await _setup(world)
     del world.read.manifests[s.fw_session_id]
     resp = await _detail(world, s.id, cho)
     assert resp.status_code == 200 and resp.json()["config"] is None
 
 
-async def test_obtained_outcome_block(world: World) -> None:  # noqa: F811
+async def test_obtained_outcome_block(world: World) -> None:
     cho = await world.persona("Cho", "teacher")
     ada = await world.persona("Ada", "student")
     add_level(world.arena, "L1", 1, "Warm-up", "off")

@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import text
 
 from app.classroom.dev_seed import add_level, add_session, now
-from tests.m4_support import World, world  # noqa: F401
+from tests.m4_support import World
 
 URL = "/api/classroom/sessions"
 
@@ -80,11 +80,11 @@ def _ids(resp) -> list[str]:  # type: ignore[no-untyped-def]
     return [row["id"] for row in resp.json()["items"]]
 
 
-async def test_requires_auth(world: World) -> None:  # noqa: F811
+async def test_requires_auth(world: World) -> None:
     assert (await world.client.get(URL)).status_code == 401
 
 
-async def test_teacher_sees_everything_newest_first_with_columns(world: World) -> None:  # noqa: F811
+async def test_teacher_sees_everything_newest_first_with_columns(world: World) -> None:
     ids = await _seed(world)
     resp = await _get(world, "Cho")
     assert resp.status_code == 200
@@ -98,7 +98,7 @@ async def test_teacher_sees_everything_newest_first_with_columns(world: World) -
     assert resp.json()["total"] == 4
 
 
-async def test_x01_student_only_sees_own_even_with_student_param(world: World) -> None:  # noqa: F811
+async def test_x01_student_only_sees_own_even_with_student_param(world: World) -> None:
     ids = await _seed(world)
     own = await _get(world, "Ada")
     assert set(_ids(own)) == {ids["a1"], ids["a2"]}
@@ -106,12 +106,12 @@ async def test_x01_student_only_sees_own_even_with_student_param(world: World) -
     assert set(_ids(spoof)) == {ids["a1"], ids["a2"]}
 
 
-async def test_teacher_can_filter_by_student(world: World) -> None:  # noqa: F811
+async def test_teacher_can_filter_by_student(world: World) -> None:
     ids = await _seed(world)
     assert _ids(await _get(world, "Cho", student=ids["ben"])) == [ids["b1"]]
 
 
-async def test_x04_firewall_admin_can_read_the_list(world: World) -> None:  # noqa: F811
+async def test_x04_firewall_admin_can_read_the_list(world: World) -> None:
     await _seed(world)
     resp = await _get(world, "Dee")
     assert resp.status_code == 200 and resp.json()["total"] == 4
@@ -133,7 +133,7 @@ async def test_x04_firewall_admin_can_read_the_list(world: World) -> None:  # no
         ({"level": "L2", "mode": "basic", "admin_test": "false"}, {"b1"}),
     ],
 )
-async def test_filters(world: World, params: dict[str, str], expected: set[str]) -> None:  # noqa: F811
+async def test_filters(world: World, params: dict[str, str], expected: set[str]) -> None:
     ids = await _seed(world)
     got = set(_ids(await _get(world, "Cho", **params)))
     assert got == {ids[k] for k in expected}
@@ -154,23 +154,23 @@ async def test_filters(world: World, params: dict[str, str], expected: set[str])
 )
 async def test_x08_unknown_filter_values_are_422_not_500(
     world: World, params: dict[str, str]
-) -> None:  # noqa: F811
+) -> None:
     await _seed(world)
     assert (await _get(world, "Cho", **params)).status_code == 422
 
 
-async def test_unknown_params_are_ignored(world: World) -> None:  # noqa: F811
+async def test_unknown_params_are_ignored(world: World) -> None:
     await _seed(world)
     assert (await _get(world, "Cho", colour="red")).status_code == 200
 
 
-async def test_x10_admin_test_flag_is_present_on_rows(world: World) -> None:  # noqa: F811
+async def test_x10_admin_test_flag_is_present_on_rows(world: World) -> None:
     ids = await _seed(world)
     rows = {r["id"]: r for r in (await _get(world, "Cho")).json()["items"]}
     assert rows[ids["t1"]]["admin_test"] is True and rows[ids["a1"]]["admin_test"] is False
 
 
-async def test_paging(world: World) -> None:  # noqa: F811
+async def test_paging(world: World) -> None:
     ids = await _seed(world)
     page = await _get(world, "Cho", limit=2, offset=1)
     assert _ids(page) == [ids["b1"], ids["a2"]]
@@ -200,7 +200,7 @@ async def _quiz(
             )
 
 
-async def test_quiz_columns_show_status_latest_and_best(world: World) -> None:  # noqa: F811
+async def test_quiz_columns_show_status_latest_and_best(world: World) -> None:
     ids = await _seed(world)
     await _quiz(world, ids["a1"], ids["ada"], "done", 1, 88)
     await _quiz(world, ids["a1"], ids["ada"], "done", 2, 41)
@@ -221,12 +221,12 @@ async def test_quiz_columns_show_status_latest_and_best(world: World) -> None:  
     assert _ids(assigned) == [ids["a2"]]
 
 
-async def test_empty_class_returns_empty_list(world: World) -> None:  # noqa: F811
+async def test_empty_class_returns_empty_list(world: World) -> None:
     resp = await _get(world, "Cho")
     assert resp.status_code == 200 and resp.json() == {"items": [], "total": 0}
 
 
-async def test_session_owner_missing_from_users_shows_no_name(world: World) -> None:  # noqa: F811
+async def test_session_owner_missing_from_users_shows_no_name(world: World) -> None:
     await world.persona("Cho", "teacher")
     add_level(world.arena, "L1", 1, "Warm-up", "off")
     add_session(world.arena, world.read, user_id=str(uuid.uuid4()), level_id="L1", mode="off")
