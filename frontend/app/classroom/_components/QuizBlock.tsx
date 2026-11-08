@@ -26,8 +26,10 @@ export function QuizBlock({
   const rows = attempts?.rows ?? [];
   const open = rows.find((a) => a.status === "in_progress" || a.status === "assigned");
   return (
-    <section className={`${styles.block} ${styles.wide}`} aria-labelledby="h-quiz">
-      <h2 id="h-quiz">Quiz</h2>
+    <details className={`${styles.block} ${styles.wide}`} open>
+      <summary>
+        <h2 id="h-quiz">Quiz</h2>
+      </summary>
       <div className={styles.actions}>
         <QuizStatusPill status={row.quizStatus} />
         {attempts && (attempts.latest !== null || attempts.best !== null) ? (
@@ -48,7 +50,7 @@ export function QuizBlock({
                 <QuizStatusPill status={s.pill} />
                 <span className={styles.num}>{a.percent !== null ? `${a.percent}%` : "-"}</span>
                 <Link className="btn-alt" href={`/quiz/${encodeURIComponent(a.quizId)}`}>
-                  {a.status === "done" ? "View result" : kind === "teacher" ? "View" : s.action}
+                  {a.status === "done" ? "View result" : kind !== "student" ? "View" : s.action}
                 </Link>
               </li>
             );
@@ -63,8 +65,8 @@ export function QuizBlock({
           label={open ? "Resume quiz" : rows.length > 0 ? "Retake quiz" : "Start quiz"}
         />
       ) : null}
-      {kind === "firewall_admin" ? <p className="muted">Read-only view: firewall admins cannot assign quizzes.</p> : null}
+      {kind === "firewall_admin" ? <p className="muted">Read-only: teachers assign quizzes.</p> : null}
       {kind === "student" ? <p className="muted">Diverts and the firewall analysis open up after you take the quiz.</p> : null}
-    </section>
+    </details>
   );
 }

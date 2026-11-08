@@ -235,9 +235,10 @@ async def test_result_and_finish_access(qw: QuizWorld) -> None:
     assert (await _finish(qw, quiz, who=qw.cho)).status_code == 403
     assert (await _finish(qw, quiz, who=qw.ben)).status_code == 403
     await _finish(qw, quiz)
-    for who in (qw.ben, qw.dee):
-        assert (await _result(qw, quiz, who)).status_code == 403
-    assert (await _result(qw, quiz, qw.cho)).status_code == 200
+    assert (await _result(qw, quiz, qw.ben)).status_code == 403
+    for who in (qw.cho, qw.dee):
+        assert (await _result(qw, quiz, who)).status_code == 200
+    assert (await _finish(qw, quiz, who=qw.dee)).status_code == 403  # read, never act
     missing = {"quiz_id": "00000000-0000-4000-8000-00000000ffff"}
     assert (await _result(qw, missing)).status_code == 404
     assert (await _finish(qw, missing)).status_code == 404

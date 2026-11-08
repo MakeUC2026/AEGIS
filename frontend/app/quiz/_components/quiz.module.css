@@ -206,7 +206,7 @@
 }
 
 .error {
-  color: var(--bad, #b3261e);
+  color: var(--danger);
   margin: 8px 0 0;
 }
 .feedback {

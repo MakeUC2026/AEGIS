@@ -29,22 +29,25 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   }
   const { staff, hasConfig, view: detail } = toDetail(loaded.data);
   const r = detail.row;
-  const attemptsLoaded = viewer.kind === "firewall_admin" ? null : await load<ApiAttemptList>(["quiz", "sessions", id, "attempts"]);
+  const attemptsLoaded = await load<ApiAttemptList>(["quiz", "sessions", id, "attempts"]);
   const attempts = attemptsLoaded?.ok ? toAttempts(attemptsLoaded.data) : null;
   return (
     <main>
-      <Link className={styles.back} href="/classroom">
-        &larr; All sessions
+      <Link className={styles.back} href={viewer.kind === "student" ? "/arena/sessions" : "/classroom"}>
+        &larr; {viewer.kind === "student" ? "My sessions" : "All sessions"}
       </Link>
-      <div className={styles.head}>
-        <h1>
-          {r.studentName}, {r.levelName}
-        </h1>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow learn">Classroom</p>
+          <h1>
+            {viewer.kind === "student" ? r.levelName : `${r.studentName}, ${r.levelName}`}
+          </h1>
+          <p className="muted">
+            <span className="mode-chip" data-mode={r.mode}>{r.mode}</span> · {formatTime(r.startedAt)} · {r.status}
+            {r.adminTest ? " · admin test" : ""}
+          </p>
+        </div>
       </div>
-      <p className={styles.lead}>
-        {r.mode} mode, started {formatTime(r.startedAt)}, {r.status}.
-        {r.adminTest ? " Admin test session." : ""}
-      </p>
       <div className={styles.grid}>
         <Outcome d={detail} />
         {staff && hasConfig ? <Snapshot d={detail} /> : null}

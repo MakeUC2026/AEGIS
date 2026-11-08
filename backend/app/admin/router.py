@@ -187,9 +187,16 @@ async def deprecate_rule(rule_id: str, user: Admin) -> RuleDef:
 
 
 @router.post("/rules/{rule_id}/enabled")
-async def set_builtin_enabled(rule_id: str, body: EnabledBody, user: Admin) -> RuleDef:
+async def set_rule_enabled(rule_id: str, body: EnabledBody, user: Admin) -> RuleDef:
+    """Switch any rule on or off (built-ins and form rules alike)."""
     admin = ports.get_firewall_admin()
-    return await _run(admin.set_builtin_enabled(rule_id, body.enabled, user.id))
+    return await _run(admin.set_rule_enabled(rule_id, body.enabled, user.id))
+
+
+@router.post("/rules/{rule_id}/restore")
+async def restore_rule(rule_id: str, user: Admin) -> RuleDef:
+    """Undo a deprecation (the console's soft delete). History is untouched."""
+    return await _run(ports.get_firewall_admin().restore_rule(rule_id, user.id))
 
 
 # --- levels (C8, M3-X35) ----------------------------------------------------------------------
