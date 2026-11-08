@@ -8,7 +8,7 @@
 | Source of truth | [PRD-Injection-Arena-Unified.md](PRD-Injection-Arena-Unified.md) (PRD v3.1). When this doc and the PRD disagree, the PRD wins unless the PRD leaves the point open. Then this doc's §0 decides |
 | Sibling docs | [M1 Foundation and Arena](PROGRESS-M1-Foundation-Arena.md) · [M2 AFF Core](PROGRESS-M2-AFF-Core.md) · [M4 Classroom](PROGRESS-M4-Classroom.md) |
 | PRD sections owned | §0 (D-05, D-12, D-15 judge side), §7.3 layers 2 and 3, §7.5, §10.2, §10.3, §11, §15.3 (judge, forensic worker rows) |
-| Status | `NOT STARTED` |
+| Status | `IN PROGRESS` (Phase A rechecked; A-07 waits on `next build`. Phase B next) |
 
 Status legend for every checkbox list: `[ ]` not started · `[~]` in progress (add a note) · `[x]` done and tested · `[!]` blocked (add a note to the Progress log).
 
@@ -164,13 +164,52 @@ M3 makes Strict smart and makes the firewall learn. M3 provides the risky histor
 
 ### Phase A: pure logic, no dependencies (H0–H3)
 
-- [ ] A-01 Pattern matcher (PRD §7.5) on canonical arguments: operators `equals`, `contains`, `regex` (RE2), `in`, `domain_in`, `domain_not_in`, `inside_workspace`, `outside_workspace`, `gt`, `lt`. A pattern matches only when **all** its conditions match. Uses the same normalization as M2 (NFKC, zero-width removed, case-folded).
-- [ ] A-02 Layer 2 scoring math (PRD §7.3): approved pattern match sets `forced_deny`; this user's non-shadow events on the same tool in the last 7 days score 15 each, max 30; an earlier non-shadow divert by this user scores +20; top-1 cosine similarity of 0.85 or more scores +25, from 0.75 up to 0.85 scores +10, otherwise 0. Only one similarity bucket applies.
-- [ ] A-03 Approval checks (PRD §7.5): refuse unless the pattern is non-empty, matches the original call, and matches no benign fixture call. Also refuse invalid RE2. Return every failed reason.
-- [ ] A-04 Judge prompt and `policy/judge-policy.md`: the item and its context are wrapped in data delimiters as untrusted; the response schema is `{"risk": 0-100, "suggested_action": "allow|review|deny|divert", "reason": "..."}`.
-- [ ] A-05 Forensic response schema (PRD §10.2): `attack_family` (one of: direct override, indirect injection, authority spoofing, forged approval, goal drift, exfiltration via email, encoded or split leak, shell abuse), `atlas_techniques`, `summary` (two plain sentences), `missed_signals`, `would_have_blocked_in` (subset of Off, Basic, Strict).
-- [ ] A-06 Draft response schema (PRD §10.3): either a rule draft in the exact rule-form fields (PRD §9.1) or a pattern draft in the pattern format (PRD §7.5).
-- [ ] A-07 Admin UI page shells for all P0 screens with mock data, using M1's shell and theme.
+- [x] A-01 Pattern matcher (PRD §7.5) on canonical arguments: operators `equals`, `contains`, `regex` (RE2), `in`, `domain_in`, `domain_not_in`, `inside_workspace`, `outside_workspace`, `gt`, `lt`. A pattern matches only when **all** its conditions match. Uses the same normalization as M2 (PRD §9.1: NFKC, zero-width and control characters removed, case-folded).
+- [x] A-02 Layer 2 scoring math (PRD §7.3): approved pattern match sets `forced_deny`; this user's non-shadow events on the same tool in the last 7 days score 15 each, max 30; an earlier non-shadow divert by this user scores +20; top-1 cosine similarity of 0.85 or more scores +25, from 0.75 up to 0.85 scores +10, otherwise 0. Only one similarity bucket applies.
+- [x] A-03 Approval checks (PRD §7.5): refuse unless the pattern is non-empty, matches the original call, and matches no benign fixture call. Also refuse invalid RE2. Return every failed reason.
+- [x] A-04 Judge prompt and `policy/judge-policy.md`: the item and its context are wrapped in data delimiters as untrusted; the response schema is `{"risk": 0-100, "suggested_action": "allow|review|deny|divert", "reason": "..."}`.
+- [x] A-05 Forensic response schema (PRD §10.2): `attack_family` (one of: direct override, indirect injection, authority spoofing, forged approval, goal drift, exfiltration via email, encoded or split leak, shell abuse), `atlas_techniques`, `summary` (two plain sentences), `missed_signals`, `would_have_blocked_in` (subset of Off, Basic, Strict).
+- [x] A-06 Draft response schema (PRD §10.3): either a rule draft in the exact rule-form fields (PRD §9.1) or a pattern draft in the pattern format (PRD §7.5).
+- [~] A-07 Admin UI page shells for all P0 screens with mock data, using M1's shell and theme. Note: six pages under `frontend/app/admin/` plus layout guard; `tsc` clean; checked with Playwright (admin sees all six, student and teacher redirected, 390 px width OK, no console errors). Recheck added the missing Levels "signal weights" column. **Open:** `next build` has never run (the session sandbox blocks `stat` on `frontend/.env*`); run it on a normal shell, then tick.
+
+### Phase A recheck (H2)
+
+Every item was re-read against the PRD clauses below and its tests re-run. "Deferred" cases need the DB or the worker and are covered by the item named.
+
+| Item | PRD | Verdict | Evidence and fixes | Deferred cases |
+| --- | --- | --- | --- | --- |
+| A-01 matcher | §7.5, §9.1 | **FIXED** | `test_match` (28 cases), `test_x13_*`, `test_normalize`, property tests `test_prop_match_never_raises`, `test_prop_normalize_drops_controls`. Fix: a Windows drive path (`C:\...`) counted as inside the workspace; now outside. Full-width `．．/` covered (NFKC) | — |
+| A-02 layer 2 math | §7.3 | **PASS** | `test_x01_*`, `test_x05_*` (0.85, 0.8499, 0.75, 0.749), `test_x06_*`, `test_pattern_match_forces_deny_*`, `test_prop_layer2_only_raises` (I-1). In Strict, layer 2 either runs fully or raises, so there is no "did not run" value to keep `null` | M3-X02, X03, X07, X08 are filters in the lookup SQL: B-02 |
+| A-03 approval checks | §7.5 | **PASS** | `test_e39_*`, `test_e40_*`, `test_e41_*`, `test_every_reason_returned`, `test_x12_*` (3 invalid RE2), `test_wrong_value_types_refused`. Structural errors return early on purpose: a broken pattern cannot be matched meaningfully | — |
+| A-04 judge prompt and policy | §7.3 layer 3, §15.3 | **FIXED** | `test_x16_*` (8 invalid answers plus unparseable), `test_x18_*`, `test_x19_*`, `test_judge_returns_model_verdict_unchanged` (E-09, E-52), `test_prop_parse_verdict_only_raises_judge_error`, `test_prop_untrusted_data_cannot_close_block`. Fix 1: delimiter stripping was case-sensitive, but M2 hands the judge case-folded text, so `<<<end_untrusted_data>>>` survived inside the data block. Now NFKC plus case- and space-insensitive. Fix 2: an unexpected client exception escaped as itself; now `JudgeError` (I-2) | B-05 `create()` factory |
+| A-05 forensic schema | §10.2 | **FIXED** | `test_forensic_schema_validates_family` (M3-X25 schema side). Fix: `atlas_techniques` accepted any string; now must look like `AML.Txxxx[.yyy]` (checked in Pydantic, kept out of the Gemini schema). `summary` "two sentences" is asked by the prompt only (max 600 chars enforced) | Secret redaction M3-X24: C-02 |
+| A-06 draft schema | §10.3, §9.1, §7.5 | **PASS** | `test_draft_schema_rule_pattern_or_none` (M3-X36 regex on a number refused). Rule fields, weight 5–60 and ATLAS tag come from M1's `RuleForm`. Empty pattern conditions and invalid RE2 in a draft are accepted by the schema on purpose, so C-04 can keep them as `failed_validation` with a reason (PRD §10.3) | Validation M3-X29, X31, E-56: C-04 |
+| A-07 admin shells | §11, §5.2 | **FIXED, DOWNGRADE** | Playwright: all six pages render for `firewall_admin`; student and teacher land on `/`; no page overflow at 390 px; 0 console errors or warnings. Fix: Levels lacked "signal weights" (PRD §11, §5.2), Off showed a 120 s review timeout (PRD §5.2: Off holds nothing, now "—") and used Basic bands (Off scores like Strict in shadow). Mock data stays in `mock.ts` only. The layout redirect is UX only; the control is `require_role("firewall_admin")` on every `app/admin/` route (I-4, C-10). `tsc --noEmit` clean. `next build` not run | Real data: D-01 |
+
+**Codex cross-review (H2).** Codex (`codex exec`, read-only) reviewed the Phase A files in 9 rounds until it reported no findings. Each finding was checked against the PRD and fixed only when both agreed (all 8 were):
+
+| Round | Finding | Fix |
+| --- | --- | --- |
+| 1 | Missing or empty `fixtures/benign/` made the "matches no benign call" check pass without checking | `load_benign_calls` raises when it finds no calls |
+| 2 | `gt`/`lt` converted ints to `float`, so values above 2**53 rounded and a pattern could miss | Exact numbers |
+| 3 | Decimal and exponent strings (`"9007199254740993.0"`) still rounded | Numeric strings parsed as `Decimal`; NaN never matches |
+| 4 | Numeric strings skipped PRD §9.1 normalization (`"６．０"`, `"6"` + zero-width) | Normalize before parsing |
+| 5 | Nothing pinned the 8 s judge limit itself | `test_x17_timeout_is_8s` |
+| 6 | Float `0.3` and string `"0.3"` compared as different values | Every number becomes `Decimal` (floats through their shortest `repr`); property tests for integers in four forms and for fractional floats |
+| 7 | `validate_for_approval` itself accepted an empty or exhausted benign list | The shared function refuses with "no benign fixture calls to check against" |
+| 8 | The outer `asyncio.timeout` deadline was not pinned | The same test records the outer deadline and the client timeout (both 8.0) |
+| 9 | — | NO FINDINGS |
+
+Checks run at the recheck: `pytest tests/unit/test_m3_phase_a.py` **99 passed** (was 68 before the recheck); coverage of the Phase A modules 98% (judge 100%, risky_history 100%, risky_patterns 97%); `ruff check` (includes bandit `S` rules) and `ruff format --check` clean; `pip-audit` no known vulnerabilities; `npm audit` 0 vulnerabilities; `tsc --noEmit` clean. Not run: gitleaks and semgrep (not installed on this machine), `next build` (sandbox), ESLint (cannot load its config, see the `[!]` below), DAST (no admin API routes until C-10). Security review done inline in this recheck, not by a separate reviewer agent. The full unit suite has one failure outside M3, `test_ports_and_llm.py::test_documented_default_resolves_every_seam`, because the sandbox blocks reading `.env.example`.
+
+Files outside M3's ownership in the working tree (X-7):
+
+| File | Verdict |
+| --- | --- |
+| `backend/pyproject.toml`, `backend/uv.lock` | Keep. Only `google-re2>=1.1` added, approved in §10. Tell M1 in the PR |
+| `frontend/package.json`, `frontend/package-lock.json` | `[!]` Not M3's. `eslint-config-next` moved from `16.4.5` to `^15.5.29` against Next 16.4.5, and ESLint now cannot load. Leave out of M3's commits; ask M1 to revert or fix |
+| `.claude-flow/` (untracked) | Local tool state. Never commit; ask M1 to add it to `.gitignore` |
+| `frontend/app/admin/page.tsx` | M3-owned since G0 (placeholder hand-over, §0.2 rule 4) |
 
 ### Phase B: schema, lookup and judge (H3–H8, Gate 1)
 
@@ -178,7 +217,7 @@ M3 makes Strict smart and makes the firewall learn. M3 provides the risky histor
 - [ ] B-02 `lookup`: one SQL round trip per checked item (CTE) for the approved patterns at or below the session's pinned `pattern_version`, this user's same-tool events in the last 7 days, any earlier divert by this user, and the top-3 nearest attack embeddings. Input embedding comes from `GeminiClient.embed` with a 2 s timeout and is cached by text hash for `record_behavior`.
 - [ ] B-03 `record_behavior` and `add_candidate`: insert inside the caller's transaction. Embedding taken from the lookup cache, else `null` (the worker backfills it).
 - [ ] B-04 `current_pattern_version()`: the highest `approved_in_version`, or 0.
-- [ ] B-05 `judge.assess`: Gemini Flash with structured output, 8 s timeout, schema validation; any failure raises. `policy_hash()` is the SHA-256 of `policy/judge-policy.md`.
+- [~] B-05 `judge.assess`: Gemini Flash with structured output, 8 s timeout, schema validation; any failure raises. `policy_hash()` is the SHA-256 of `policy/judge-policy.md`. Note: `Judge` class and tests done; `create()` factory (GeminiClient and budget wiring) still to do.
 - [ ] B-06 Performance test: lookup under 50 ms p95 on 10,000 `risky_behavior_events` rows and 200 patterns, measured without the embedding API call (PRD §7.5).
 - [ ] B-07 Hand C7 to M2 on the `integration` branch. Confirm E-50 and E-51 pass end to end with M2's Gatekeeper.
 
@@ -341,6 +380,13 @@ E-39 to E-43 are "as AFF v0.3". That document is not in this repo, so the cases 
 | Draft cluster threshold | Cosine 0.9 or more |
 | Forensic model | Pro tier if budget allows, else Flash (PRD §3.2) |
 | Judge injected to allow (PRD §18.1, high) | Judge can only raise; rules are the boundary |
+| Judge `risk` outside the band of its own `suggested_action` (e.g. risk 9 with deny) | `JudgeError`, so M2 fails closed |
+| Regex engine | `google-re2` added to `backend/pyproject.toml` (PRD §9.1). M2 should reuse it |
+| Text normalizer and workspace check | Local copies in `risky_patterns.py` until M2's A-03 normalizer and B-03 resolver land, then switch |
+| `fixtures/` and `policy/` in the backend image | `[!]` Not copied by the Dockerfile today. Ask M1 to add both before Phase B ends (the judge reads the policy at start-up; draft validation reads fixtures). `AEGIS_FIXTURES_DIR` overrides the fixtures path |
+| Input size cap in the matcher | None. Capping would make a match silently miss and weaken a Deny. Oversized input is denied by M2 before the Sentinel (I-2). RE2 keeps matching linear |
+| Draft and forensic JSON schema sent to Gemini | Pydantic emits `oneOf`, `discriminator`, `$ref` and `const` for the draft union. Not yet checked against Gemini's `responseJsonSchema` support. Verify with one live call in C-02; if refused, flatten the schema and keep Pydantic as the validator |
+| Level signal weight range (M3-X35) | The plan says 5–60; M1's `LevelConfigUpdate` accepts 0–100. Raise with M1 before D-01; until then the Levels form enforces 5–60 on the client and relies on M1's check on the server |
 
 ---
 
@@ -349,3 +395,8 @@ E-39 to E-43 are "as AFF v0.3". That document is not in this repo, so the cases 
 | Time (H+) | Gate | Done | Blocked or at risk | Next |
 | --- | --- | --- | --- | --- |
 | H0 | — | Doc created | — | Phase A |
+| H1 | — | A-01 to A-06 done with 64 unit tests (E-39, E-40, E-41, M3-X01, X04, X05, X06, X12, X13, X14, X16, X17, X18 prompt side, X19, X25 schema side). A-07 shells written. B-05 `Judge` class done | `next build` and Playwright not run: sandbox blocks `.env`. ESLint fails on the uncommitted `eslint-config-next` downgrade in `frontend/package.json` (not M3's change) | Verify A-07 in the browser; B-01 migration |
+| H1 | — | Codex review fixes: nested judge delimiters, newline/tab word boundaries in the normalizer, URL host parsed before email in domain checks, strict judge validation (no `"0"` to 0). 68 unit tests pass | Judge policy and fixtures missing from the backend image (ask M1). `.env` still blocked by the session sandbox | Playwright on `/admin`, B-01 |
+| H1 | — | A-07 verified in the browser with Playwright: firewall admin sees all six P0 shells, student redirected from `/admin`, phone width OK, zero console errors | `next build` still not run here | B-01 migration |
+| H2 | — | Phase A recheck (see the table under Phase A): 4 fixes (judge delimiters case-insensitive, judge fails closed on any client error, ATLAS ID check, drive-letter paths outside workspace) and the Levels weights column. 77 tests pass, 98% coverage, pip-audit and npm audit clean | A-07 back to `[~]` until `next build` runs. `[!]` for M1: `eslint-config-next` downgrade breaks ESLint; `policy/` and `fixtures/` missing from the image; `.claude-flow/` not ignored; signal weight range 5–60 vs 0–100. gitleaks and semgrep not installed here | Phase B: B-01 migration |
+| H2 | — | Codex cross-review, 9 rounds until NO FINDINGS: 8 agreed fixes (benign corpus fails closed in the loader and in `validate_for_approval`; exact, normalized numeric comparison; the 8 s judge limit pinned at all three points). 99 tests pass, 98% coverage, ruff clean | Same open items as the row above | Phase B: B-01 migration |
