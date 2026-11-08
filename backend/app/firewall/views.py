@@ -72,6 +72,7 @@ def turn_result(
         decision=fact_decision,
         rule_ids=rule_ids,
         secret_attempted=prior_attempted
+        or secret_delivered  # a delivered secret was certainly tried, even if no check saw it
         or any(c.leak is not None for c in checks if c.stage != "input_check"),
         secret_delivered=secret_delivered,
         diverted=diverted,
