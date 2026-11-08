@@ -30,6 +30,7 @@ from app.contracts.sentinel import JudgePort, RiskyHistoryPort
 from app.db.engine import make_engine
 from app.firewall.catalog import read_catalog
 from app.firewall.closing import close_session
+from app.firewall.decoys import DecoyGenerator
 from app.firewall.pipeline import run_message
 from app.firewall.sessions import register_session
 from app.firewall.tickets import check_ticket
@@ -58,11 +59,13 @@ class RealFirewall:
         llm: ChatModel,
         risky: RiskyHistoryPort,
         judge: JudgePort,
+        decoys: DecoyGenerator | None = None,
     ) -> None:
         self._engine = engine
         self._llm = llm
         self._risky = risky
         self._judge = judge
+        self._decoys = decoys
 
     async def read_catalog(self) -> Catalog:
         return await read_catalog(self._engine)
@@ -79,7 +82,15 @@ class RealFirewall:
         client: ClientMeta,
     ) -> TurnResult:
         return await run_message(
-            self._engine, self._llm, owner_ref, fw_session_id, message_id, text, client
+            self._engine,
+            self._llm,
+            owner_ref,
+            fw_session_id,
+            message_id,
+            text,
+            client,
+            risky=self._risky,
+            decoys=self._decoys,
         )
 
     async def check_ticket(self, owner_ref: str, ticket_id: str) -> TicketResult:

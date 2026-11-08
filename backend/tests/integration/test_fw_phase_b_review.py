@@ -238,6 +238,8 @@ async def test_strict_catches_a_secret_split_across_attacker_emails(engine: Asyn
         results.append(await run_message(engine, llm, owner, sid, f"m{i}", f"send {i}", CLIENT))
     assert [r.player_view.status for r in results[:2]] == ["replied", "replied"]
     last = results[-1]
-    assert last.player_view.status == "blocked"
+    # Strict diverts an outbound secret hit (PRD §8.4, C-05): the student sees "sent", the
+    # mail never goes out, and the secret is not delivered
+    assert last.facts.decision == "divert" and last.facts.diverted is True
     assert "B-01" in last.facts.rule_ids
     assert last.facts.secret_delivered is False

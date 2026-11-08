@@ -52,6 +52,7 @@ from app.contracts.firewall_admin import ConflictError, TicketDecision
 from app.contracts.sentinel import PatternCandidate, RiskyBehaviorRecord, RiskyHistoryPort
 from app.firewall.claims import complete_claim
 from app.firewall.continuation import continue_turn
+from app.firewall.decoys import DecoyGenerator
 from app.firewall.events import EventRow, insert_event
 from app.firewall.review import Continuation
 from app.llm.base import ChatModel
@@ -176,7 +177,7 @@ def _resolved_result(cont: Continuation, *, denied_by_human: bool) -> TurnResult
             rule_ids=list(cont.rule_ids),
             secret_attempted=cont.secret_attempted,
             secret_delivered=cont.secret_delivered,
-            diverted=False,
+            diverted=cont.diverted,
         ),
     )
 
@@ -281,6 +282,7 @@ async def decide_ticket(
     decision: TicketDecision,
     admin_id: str,
     clock: Callable[[], datetime] = _utcnow,
+    decoys: DecoyGenerator | None = None,
 ) -> TurnResult:
     async with engine.begin() as conn:
         row = (await conn.execute(text(_LOCK), {"t": ticket_id})).mappings().first()
@@ -322,6 +324,8 @@ async def decide_ticket(
         _resolved_line(cont, "allow"),
         held,
         clock,
+        risky,
+        decoys,
     )
 
 

@@ -21,9 +21,11 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.contracts.firewall import FeedItem, TurnResult
+from app.contracts.sentinel import RiskyHistoryPort
 from app.firewall.bot_runner import BotTurn, resume_turn
 from app.firewall.canonical import CanonicalError, canonicalize
 from app.firewall.context import TurnContext, load_context
+from app.firewall.decoys import DecoyGenerator
 from app.firewall.events import EventRow
 from app.firewall.pipeline import (
     Clock,
@@ -123,6 +125,8 @@ async def continue_turn(
     resolved: FeedItem,
     held: Mapping[str, Any],
     clock: Clock,
+    risky: RiskyHistoryPort | None = None,
+    decoys: DecoyGenerator | None = None,
 ) -> TurnResult:
     """`resolved` is the review's feed line; `held` carries the ticket's score, breakdown,
     rule IDs and ticket ID for the held tool's execution event."""
@@ -138,6 +142,10 @@ async def continue_turn(
         prior_feed=[*cont.feed, resolved],
         prior_rule_ids=list(cont.rule_ids),
         prior_attempted=cont.secret_attempted,
+        diverted=cont.diverted,
+        student_message=cont.student_message,  # no client data is kept with a parked turn
+        risky=risky,
+        decoys=decoys,
     )
     message = cont.student_message
     try:

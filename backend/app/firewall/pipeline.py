@@ -15,6 +15,7 @@ Temporary until C-05: a Divert decision fails closed (blocked).
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -25,11 +26,14 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from app.contracts.common import ClientMeta, ExecutionStatus, Stage
 from app.contracts.firewall import FeedItem, PlayerStatus, ToolEffect, TurnResult
+from app.contracts.sentinel import RiskyHistoryPort
 from app.firewall.bot_runner import BotTurn, ToolStep, run_turn
 from app.firewall.canonical import CanonicalCall
 from app.firewall.checks import Checked, check_input, check_output, check_tool_call
 from app.firewall.claims import claim_message, complete_claim, release_claim
 from app.firewall.context import TurnContext, load_context
+from app.firewall.decoys import DecoyGenerator, make_decoy
+from app.firewall.divert import divert_call
 from app.firewall.events import EventRow, SourceTrust, insert_event, row_from_decision
 from app.firewall.leak import echo_excluded, scan_cumulative
 from app.firewall.limits import check_text
@@ -40,6 +44,8 @@ from app.firewall.views import turn_result
 from app.llm.base import ChatMessage, ChatModel, ToolCall
 
 Clock = Callable[[], datetime]
+
+logger = logging.getLogger(__name__)
 
 _CONVERSATION = (
     "INSERT INTO fw_conversation (fw_session_id, seq, message_id, role, content, visible,"
@@ -72,6 +78,12 @@ class Turn:
     prior_feed: list[FeedItem] = field(default_factory=list)
     prior_rule_ids: list[str] = field(default_factory=list)
     prior_attempted: bool = False
+    diverted: bool = False  # a decoy was returned in this turn (C-05)
+    # what Divert needs (C-05): who is asking, what they typed, and the C7/decoy ports
+    client: ClientMeta = field(default_factory=ClientMeta)
+    student_message: str = ""
+    risky: RiskyHistoryPort | None = None
+    decoys: DecoyGenerator | None = None
 
     def result(
         self, status: PlayerStatus, reply: str | None, delivered: bool, ticket: str | None = None
@@ -86,6 +98,7 @@ class Turn:
             prior_feed=self.prior_feed,
             prior_rule_ids=self.prior_rule_ids,
             prior_attempted=self.prior_attempted,
+            diverted=self.diverted,
         )
 
 
@@ -136,6 +149,13 @@ def tool_hook(engine: AsyncEngine, turn: Turn, clock: Clock) -> Callable[..., An
                 )
             )
             return ToolStep.hold()
+        if checked.gate.decision == "divert" and checked.call is not None:
+            step = await _divert(engine, turn, checked, call, clock)
+            if step is not None:
+                return step
+            # the divert transaction failed and rolled back: block, never run the real tool
+            checked = replace(checked, gate=replace(checked.gate, decision="deny"))
+            turn.checks[-1] = checked
         if not checked.allowed or checked.call is None:
             turn.effects.append(
                 ToolEffect(call_id=call_id, tool=tool, state="blocked", visible_content=None)
@@ -154,6 +174,46 @@ def tool_hook(engine: AsyncEngine, turn: Turn, clock: Clock) -> Callable[..., An
         return await execute_allowed(engine, turn, checked.call, call, events)
 
     return on_tool_call
+
+
+async def _divert(
+    engine: AsyncEngine, turn: Turn, checked: Checked, call: ToolCall, clock: Clock
+) -> ToolStep | None:
+    """Divert a tool call (C-05): decoy first, then one transaction. None means it failed
+    (everything rolled back) and the caller blocks the call."""
+    canonical = checked.call
+    if canonical is None:
+        return None
+    try:
+        decoy = await make_decoy(turn.decoys, canonical, turn.ctx.secret)
+        async with engine.begin() as conn:
+            done = await divert_call(
+                conn,
+                event=_event(turn, checked, "diverted"),
+                call=canonical,
+                decoy=decoy,
+                client=turn.client,
+                student_message=turn.student_message,
+                risky=turn.risky,
+                now=clock(),
+            )
+    except Exception as exc:  # fail closed: a divert that cannot be recorded is a block
+        logger.warning("divert failed closed: %s", type(exc).__name__)
+        return None
+    turn.effects.append(
+        ToolEffect(
+            call_id=done.call_id,
+            tool=canonical.tool,
+            state="executed",  # a diverted call shows as executed (PRD §8.4)
+            visible_content=done.visible_content,
+        )
+    )
+    if done.visible_content:
+        turn.visible_new.append(done.visible_content)
+        turn.visible_by_call[call.id] = done.visible_content
+    turn.tool_results.append(done.result)
+    turn.diverted = True
+    return ToolStep.result(done.result)
 
 
 async def execute_allowed(
@@ -306,6 +366,7 @@ async def _park(
         rule_ids=list(result.facts.rule_ids),
         secret_attempted=result.facts.secret_attempted,
         secret_delivered=delivered,
+        diverted=turn.diverted,
         tool_results=list(turn.tool_results),
         visible_new=list(turn.visible_new),
         visible_by_call=dict(turn.visible_by_call),
@@ -355,9 +416,24 @@ async def _drop_parked(conn: AsyncConnection, turn: Turn) -> None:
 
 
 async def _run(
-    engine: AsyncEngine, llm: ChatModel, sid: str, message_id: str, message: str, clock: Clock
+    engine: AsyncEngine,
+    llm: ChatModel,
+    sid: str,
+    message_id: str,
+    message: str,
+    clock: Clock,
+    client: ClientMeta,
+    risky: RiskyHistoryPort | None,
+    decoys: DecoyGenerator | None,
 ) -> TurnResult:
-    turn = Turn(ctx=await load_context(engine, sid), message_id=message_id)
+    turn = Turn(
+        ctx=await load_context(engine, sid),
+        message_id=message_id,
+        client=client,
+        student_message=message,
+        risky=risky,
+        decoys=decoys,
+    )
     checked_input = check_input(turn.ctx, message, clock())
     turn.checks.append(checked_input)
     if checked_input.gate.decision == "review":
@@ -429,14 +505,20 @@ async def run_message(
     message: str,
     client: ClientMeta,
     clock: Clock = _utcnow,
+    *,
+    risky: RiskyHistoryPort | None = None,
+    decoys: DecoyGenerator | None = None,
 ) -> TurnResult:
-    """C2 `send_message` core. `client` is used only by Divert's trace-back (Phase C)."""
+    """C2 `send_message` core. `client` is used only by Divert's trace-back (C-05, C-07);
+    `risky` receives the Divert record (C7); `decoys` is the decoy generator (C-06)."""
     message = storable(message)  # NUL and lone surrogates cannot be stored (M2-DD-36)
     claim = await claim_message(engine, owner_ref, fw_session_id, message_id, message)
     if claim.stored is not None:
         return claim.stored
     try:
-        return await _run(engine, llm, fw_session_id, message_id, message, clock)
+        return await _run(
+            engine, llm, fw_session_id, message_id, message, clock, client, risky, decoys
+        )
     except BaseException:
         await release_claim(engine, fw_session_id, message_id)
         raise

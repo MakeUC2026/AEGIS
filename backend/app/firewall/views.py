@@ -53,6 +53,7 @@ def turn_result(
     prior_feed: Sequence[FeedItem] = (),
     prior_rule_ids: Sequence[str] = (),
     prior_attempted: bool = False,
+    diverted: bool = False,
 ) -> TurnResult:
     """`prior_*`: what a parked turn had already produced before its review (C-02)."""
     new_rule_ids = (r for c in checks for r in c.gate.rule_ids)
@@ -64,13 +65,16 @@ def turn_result(
         ticket_id=ticket_id,
         defense_feed=[*prior_feed, *(feed_item(c) for c in checks)],
     )
+    fact_decision: Decision = _FACT_DECISION.get(status, "allow")
+    if diverted and status == "replied":
+        fact_decision = "divert"  # a decoy was returned and the turn looks replied
     facts = Facts(
-        decision=_FACT_DECISION.get(status, "allow"),
+        decision=fact_decision,
         rule_ids=rule_ids,
         secret_attempted=prior_attempted
         or any(c.leak is not None for c in checks if c.stage != "input_check"),
         secret_delivered=secret_delivered,
-        diverted=False,
+        diverted=diverted,
     )
     return TurnResult(player_view=view, facts=facts)
 
