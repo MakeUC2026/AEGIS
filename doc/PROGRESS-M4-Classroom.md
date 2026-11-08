@@ -205,6 +205,15 @@ M4 provides no in-process contract to the other machines.
 - [ ] D-03 Grader hardening run against the real Gemini model on the A-05 samples (PRD §13.5). Target: every gaming sample scores 3 or less out of 12 on free response; every good sample scores 9 or more. Record the results and model ID in the Progress log. Adjust the grader prompt (not the rubric) until the target holds.
 - [ ] D-04 End-to-end on fakes: a teacher opens a session, launches a quiz, the student completes it, the teacher reads the grade and feedback (PRD §1.3 item 4). This is the Gate 3 "dashboard and quiz complete on fakes" check.
 
+
+### Deferred from M1 (2026-11-07)
+
+Items M1 cannot finish without M4. M1 tracks them in its §4c and ticks its side when these land.
+
+- [ ] DM1-1 **Contract sign-off before G1** (M1 AC-8, X-2): review the shapes M4 consumes in `backend/app/contracts/` (C3, C4, C8), plus the additions in §3.3. Then either record "M4 signs off" in the M1 Progress log or open a contract-change PR. Contracts freeze at G1.
+- [ ] DM1-2 **Seed hook** (M1 D-02): if M4 seeds demo content (classes, sample quizzes), expose it as `async def seed(engine) -> None`, idempotent, in `backend/app/classroom/seed.py` or `backend/app/quiz/seed.py`. `scripts/seed_demo.py` picks it up automatically.
+- [ ] DM1-3 **Same `users.id` in classroom records** (M1 AC-1, last clause): classroom and quiz rows key students by the `users.id` that C4 returns (`ArenaSession.user_id`), never by name or email. Add a test that a student who played appears in the teacher's session list under that same ID. M1 already covers the arena, C4 and AFF side (`test_player_and_c4_share_one_user_id`).
+
 ---
 
 ## 5. Edge cases (each is a required test)

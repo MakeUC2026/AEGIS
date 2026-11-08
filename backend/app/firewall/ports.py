@@ -15,6 +15,7 @@ import os
 from collections.abc import Callable
 from typing import Any, cast
 
+from app.config import get_settings
 from app.contracts.arena import ArenaServicePort
 from app.contracts.fakes import (
     FakeArenaService,
@@ -48,8 +49,18 @@ class PortUnavailable(RuntimeError):
 _instances: dict[str, Any] = {}
 
 
+def _setting(env_name: str, attr: str) -> str:
+    """Process environment first (CI, tests, deploys), else the app settings, which read .env."""
+    value = os.environ.get(env_name)
+    return value if value is not None else getattr(get_settings(), attr)
+
+
+def fake_script() -> str:
+    return _setting("AEGIS_FAKE_SCRIPT", "fake_script")
+
+
 def fake_seams() -> frozenset[str]:
-    raw = os.environ.get("AEGIS_USE_FAKES", "")
+    raw = _setting("AEGIS_USE_FAKES", "use_fakes")
     names = frozenset(n.strip() for n in raw.split(",") if n.strip())
     unknown = names - SEAMS
     if unknown:
@@ -60,7 +71,7 @@ def fake_seams() -> frozenset[str]:
 def _fake(name: str) -> Any:
     if name == "firewall":
         read = get_firewall_read() if "read" in fake_seams() else None
-        responder = dev_responder if os.environ.get("AEGIS_FAKE_SCRIPT") == "dev" else None
+        responder = dev_responder if fake_script() == "dev" else None
 
         def observe(ctx: Any, message_id: str, text: str, result: Any) -> None:
             if isinstance(read, FakeFirewallRead):
@@ -83,7 +94,8 @@ def _fake(name: str) -> Any:
 def _real(name: str) -> Any:
     module_name, _, attr = REAL_FACTORIES[name].partition(":")
     try:
-        module = importlib.import_module(module_name)
+        # module_name comes only from the constant REAL_FACTORIES allowlist, never from input.
+        module = importlib.import_module(module_name)  # nosemgrep: non-literal-import
     except ModuleNotFoundError as exc:
         raise PortUnavailable(
             f"seam {name!r}: {module_name} is not on this branch; add {name!r} to AEGIS_USE_FAKES"

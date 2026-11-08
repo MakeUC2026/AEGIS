@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 
+import { isSameOriginRequest } from "@/lib/same-origin";
 import { getAccessToken } from "@/lib/session";
 import { apiUrl, proxySecret } from "@/lib/server-env";
 import { buildUpstreamUrl, upstreamHeaders } from "@/lib/upstream";
@@ -19,6 +20,8 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<NextResponse> {
   const { path } = await ctx.params;
   const url = buildUpstreamUrl(apiUrl(), path, request.nextUrl.search);
   if (!url) return json(400, "bad path");
+  const unsafe = request.method !== "GET" && request.method !== "HEAD";
+  if (unsafe && !isSameOriginRequest(request.headers)) return json(403, "cross-origin");
   const token = await getAccessToken();
   if (!token) return json(401, "not signed in");
 
@@ -28,7 +31,7 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<NextResponse> {
     cache: "no-store",
     redirect: "manual",
   };
-  if (request.method !== "GET" && request.method !== "HEAD") {
+  if (unsafe) {
     const body = await request.text();
     if (new TextEncoder().encode(body).byteLength > MAX_BODY_BYTES) return json(413, "body too large");
     init.body = body;

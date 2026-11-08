@@ -57,6 +57,18 @@ models or test real Auth0 sign-in, get `GEMINI_API_KEY` and the `AUTH0_*` web-ap
 project owner privately and paste them into your `.env`. Model IDs are already pinned in
 `.env.example`. Set `AEGIS_AUTH_MODE=auth0` for real sign-in.
 
+**Two machines on one computer (for example M1 and M2):**
+
+- Give each branch its own git worktree. From the repo root, run
+  `git worktree add ../AEGIS-m2 -b m2/aff-core origin/master`. Then repeat the setup steps in that
+  folder: copy `.env`, `uv sync`, `npm ci`, and the `frontend/.env.local` link from the repo root.
+- Give each one its own test database, so parallel test runs never drop each other's:
+  `AEGIS_TEST_DB=aegis_test_m2 uv run pytest`. The name must start with `aegis_test`. Both can
+  share the one Compose `db` container.
+- Use different ports for the second one's dev servers (`--port 8001` for the API, `npm run dev -- -p 3001`),
+  and set `AEGIS_API_URL=http://127.0.0.1:8001` in that worktree's `.env`. Ports 3000 and 8000 may be
+  in use by the Compose stack.
+
 ## 3. Fakes and seams
 
 Your branch starts with every seam faked (`AEGIS_USE_FAKES=firewall,read,admin,risky,judge,arena`).
@@ -92,6 +104,7 @@ win in Off, a block in Basic and a divert in Strict, and `characters` gives the 
 | Theme tokens and shared classes | `frontend/app/globals.css` (use the variables, not hard-coded colors) |
 | Integration test fixtures (fresh DB per run) | `backend/tests/integration/conftest.py` |
 | Seed attack and benign fixtures | `fixtures/attacks/`, `fixtures/benign/` (add files with your `m2_`, `m3_`, `m4_` prefix) |
+| Your demo seed, picked up by `scripts/seed_demo.py` automatically | Write `async def seed(engine) -> None`, idempotent, in `backend/app/firewall/seed.py` (M2 rules), `backend/app/admin/seed.py` (M3), or `backend/app/classroom/seed.py` and `backend/app/quiz/seed.py` (M4). If the file is absent, it is skipped. Run `uv run python ../scripts/seed_demo.py` from `backend/`. Add `--reset` to wipe all app data first. A remote DB such as Tiger needs `--confirm-host <host>` |
 
 ## 5. Rules (from §0 of every progress doc)
 

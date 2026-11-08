@@ -77,14 +77,19 @@ async def test_level_mode_and_session_status_are_checked(engine: AsyncEngine) ->
             )
 
 
-async def test_usage_message_id_counted_once_per_user(engine: AsyncEngine) -> None:
-    insert = text("INSERT INTO usage (kind, user_id, message_id) VALUES ('message', :u, 'm1')")
+async def test_usage_message_id_counted_once_per_user_and_session(engine: AsyncEngine) -> None:
+    insert = text(
+        "INSERT INTO usage (kind, user_id, session_id, message_id)"
+        " VALUES ('message', :u, CAST(:s AS uuid), 'm1')"
+    )
+    s1, s2 = "00000000-0000-0000-0000-0000000000a1", "00000000-0000-0000-0000-0000000000a2"
     async with engine.begin() as conn:
         uid = await _user(conn)
-        await conn.execute(insert, {"u": uid})
+        await conn.execute(insert, {"u": uid, "s": s1})
+        await conn.execute(insert, {"u": uid, "s": s2})  # same id, other session: its own slot
     with pytest.raises(IntegrityError):
         async with engine.begin() as conn:
-            await conn.execute(insert, {"u": uid})
+            await conn.execute(insert, {"u": uid, "s": s1})
 
 
 async def test_turn_status_values_are_checked(engine: AsyncEngine) -> None:

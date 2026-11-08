@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+import secrets
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -149,7 +150,8 @@ class FakeFirewall:
         return Catalog(rules=list(STARTING_RULES), tools=[], rule_version=1)
 
     async def register_session(self, req: RegisterSession) -> SessionHandle:
-        n = next(self._ids)
+        # Random suffix: IDs must stay unique across process restarts (DB UNIQUE constraints).
+        n = f"{next(self._ids)}-{secrets.token_hex(4)}"
         sid, manifest = f"fws-fake-{n}", f"man-fake-{n}"
         ctx = SessionContext(
             fw_session_id=sid,
@@ -215,7 +217,7 @@ class FakeFirewall:
     ) -> TurnResult:
         self.calls += 1
         if result.player_view.status == "awaiting_review":
-            ticket_id = f"tkt-fake-{next(self._ids)}"
+            ticket_id = f"tkt-fake-{next(self._ids)}-{secrets.token_hex(4)}"
             result = with_ticket(result, ticket_id)
             self._tickets[ticket_id] = _Ticket(
                 owner_ref=session.ctx.owner_ref,

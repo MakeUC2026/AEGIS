@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     # Next.js -> FastAPI trust boundary (PRD §8.5, §15.1)
     proxy_secret: SecretStr = Field(default=SecretStr(""), alias="AEGIS_PROXY_SECRET")
 
+    # Seams (M1 §0.3): which contracts are faked on this branch; dev keyword script for the fake
+    use_fakes: str = Field(default="", alias="AEGIS_USE_FAKES")
+    fake_script: str = Field(default="", alias="AEGIS_FAKE_SCRIPT")
+
     # Arena limits
     hourly_message_cap: int = Field(default=HOURLY_MESSAGE_CAP, alias="AEGIS_HOURLY_MESSAGE_CAP")
     daily_llm_budget: int = Field(default=DEFAULT_DAILY_LLM_BUDGET, alias="AEGIS_DAILY_LLM_BUDGET")

@@ -61,3 +61,28 @@ def test_fixtures_hold_no_secret_looking_values(kind: str) -> None:
     folder = ROOT / ("attacks" if kind == "attack" else "benign")
     for path in folder.glob("*.json"):
         assert not SECRET_LIKE.search(path.read_text()), path
+
+
+# --- Test DB name (two machines' suites on one host, e.g. M1 and M2) -----------------------
+
+
+def test_test_db_name_default_and_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.integration.conftest import test_db_name
+
+    monkeypatch.delenv("AEGIS_TEST_DB", raising=False)
+    assert test_db_name() == "aegis_test"
+    monkeypatch.setenv("AEGIS_TEST_DB", "aegis_test_m2")
+    assert test_db_name() == "aegis_test_m2"
+
+
+@pytest.mark.parametrize(
+    "bad", ["aegis", "postgres", "aegis_test; DROP", 'aegis_test"x', "AEGIS_TEST", "x" * 70]
+)
+def test_test_db_name_refuses_anything_but_an_aegis_test_db(
+    monkeypatch: pytest.MonkeyPatch, bad: str
+) -> None:
+    from tests.integration.conftest import test_db_name
+
+    monkeypatch.setenv("AEGIS_TEST_DB", bad)
+    with pytest.raises(ValueError, match="AEGIS_TEST_DB"):
+        test_db_name()

@@ -203,6 +203,15 @@ M3 makes Strict smart and makes the firewall learn. M3 provides the risky histor
 - [ ] D-04 Benign fixtures `fixtures/benign/m3_*.json` for the tool calls drafts are most likely to over-match (internal emails, safe `SELECT` queries, workspace paths).
 - [ ] D-05 P2 Live metrics (per-mode decision counts and latency from M2's continuous aggregates), only if time allows.
 
+
+### Deferred from M1 (2026-11-07)
+
+Items M1 cannot finish without M3. M1 tracks them in its §4c and ticks its side when these land.
+
+- [ ] DM1-1 **Contract sign-off before G1** (M1 AC-8, X-2): review the shapes M3 provides or consumes in `backend/app/contracts/` (C3, C4, C6, C7, C8). Then either record "M3 signs off" in the M1 Progress log or open a contract-change PR. Contracts freeze at G1.
+- [ ] DM1-2 **Seed hook** (M1 D-02): if M3 seeds anything for the demo (for example the risky pattern table), expose it as `async def seed(engine) -> None`, idempotent, in `backend/app/admin/seed.py`. `scripts/seed_demo.py` picks it up automatically.
+- [ ] DM1-3 **Live `human_denied` check** (M1 AC-2): once the Review queue's **not ok** button works (D-01), hold a student's request, press not ok, and confirm the student's chat shows "A reviewer denied this request." with the input unlocked. M1 has tested this at API and unit level only.
+
 ---
 
 ## 5. Edge cases (each is a required test)

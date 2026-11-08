@@ -81,6 +81,7 @@ async def test_healthz_needs_no_auth(client: AsyncClient) -> None:
 # --- M1-X01: 401 cases ---------------------------------------------------------------
 
 
+# Edge cases: M1-X01
 async def test_missing_token_is_401(client: AsyncClient) -> None:
     assert (await client.get("/api/me")).status_code == 401
 
@@ -136,6 +137,7 @@ async def test_new_user_without_role_is_student_and_upserted_once(
     assert [tuple(r) for r in rows] == [("Ada", "ada@school.example", "student")]
 
 
+# Edge cases: M1-X04
 async def test_concurrent_first_calls_create_one_user(
     client: AsyncClient, keys: DevKeys, engine: AsyncEngine
 ) -> None:
@@ -148,6 +150,7 @@ async def test_concurrent_first_calls_create_one_user(
     assert count == 1
 
 
+# Edge cases: M1-X02
 async def test_student_on_teacher_and_admin_routes_is_403(
     client: AsyncClient, keys: DevKeys
 ) -> None:
@@ -162,6 +165,7 @@ async def test_teacher_on_admin_route_is_403(client: AsyncClient, keys: DevKeys)
     assert (await client.get("/api/probe/admin", headers=headers)).status_code == 403
 
 
+# Edge cases: M1-X05
 async def test_dual_role_user_gets_both(client: AsyncClient, keys: DevKeys) -> None:
     headers = _bearer(keys, sub="auth0|both", roles=["teacher", "firewall_admin"])
     me = (await client.get("/api/me", headers=headers)).json()
@@ -170,6 +174,7 @@ async def test_dual_role_user_gets_both(client: AsyncClient, keys: DevKeys) -> N
     assert (await client.get("/api/probe/admin", headers=headers)).status_code == 200
 
 
+# Edge cases: M1-X06
 async def test_role_comes_from_token_not_db_cache(
     client: AsyncClient, keys: DevKeys, engine: AsyncEngine
 ) -> None:
@@ -223,3 +228,53 @@ async def test_garbage_forwarded_for_and_fingerprint_are_dropped(client: AsyncCl
     )
     assert resp.json()["ip"] is None
     assert resp.json()["fingerprint_hash"] is None
+
+
+# --- Phase D DAST (ZAP 10021, 10049, 90004): security headers on every response --------
+
+SECURITY_HEADERS = {
+    "x-content-type-options": "nosniff",
+    "cross-origin-resource-policy": "same-origin",
+    "cache-control": "no-store",
+    "referrer-policy": "no-referrer",
+}
+
+
+async def test_security_headers_on_success_and_rejection(
+    client: AsyncClient, keys: DevKeys
+) -> None:
+    ok = await client.get("/api/me", headers=_bearer(keys, sub="auth0|hdr"))
+    del client.headers["x-aegis-proxy-secret"]
+    rejected = await client.get("/api/me")  # 401 from ProxySecretMiddleware itself
+    health = await client.get("/healthz")
+    assert (ok.status_code, rejected.status_code, health.status_code) == (200, 401, 200)
+    for resp in (ok, rejected, health):
+        for name, value in SECURITY_HEADERS.items():
+            assert resp.headers.get(name) == value, (resp.request.url, name)
+
+
+async def test_security_headers_on_unhandled_500(engine: AsyncEngine, keys: DevKeys) -> None:
+    # Starlette answers unhandled exceptions from ServerErrorMiddleware, outside every
+    # add_middleware entry, so the 500 handler must set the headers itself.
+    boom = APIRouter()
+
+    @boom.get("/api/boom")
+    async def _boom() -> None:
+        raise RuntimeError("boom")
+
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        AEGIS_AUTH_MODE="dev",
+        AEGIS_DEV_JWT_PUBLIC_KEY=keys.public_pem,
+        AEGIS_PROXY_SECRET=PROXY_SECRET,
+        DATABASE_URL="unused",
+    )
+    app = create_app(settings=settings, engine=engine, extra_routers=[boom])
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/api/boom", headers={"x-aegis-proxy-secret": PROXY_SECRET})
+    assert r.status_code == 500
+    assert r.json() == {"detail": "internal error"}
+    for name, value in SECURITY_HEADERS.items():
+        assert r.headers.get(name) == value, name
