@@ -146,3 +146,79 @@ def feedback(text: str = "You named the attack. Missing: the deciding layer.") -
 
 def minutes_ago(n: int) -> timedelta:
     return timedelta(minutes=n)
+
+
+# --- integration world -------------------------------------------------------------------------
+
+from dataclasses import dataclass  # noqa: E402
+
+import pytest  # noqa: E402
+from sqlalchemy import text  # noqa: E402
+
+from app.llm.scripted import ScriptedLLM  # noqa: E402
+from app.quiz.llm import QuizRuntime  # noqa: E402
+from tests.m4_support import Persona, World  # noqa: E402
+
+PRO_MODEL = "test-pro"
+FLASH_MODEL = "test-flash"
+
+
+@dataclass
+class QuizWorld:
+    w: World
+    read: RedactingRead
+    llm: ScriptedLLM
+    ada: Persona
+    ben: Persona
+    cho: Persona
+    dee: Persona
+
+    def script(self, **answers: list) -> ScriptedLLM:  # type: ignore[type-arg]
+        """Replace the scripted model with fresh answers (kept on the same runtime)."""
+        self.llm = ScriptedLLM(json_answers=answers.get("json", []))
+        self.w.app.state.quiz_runtime = QuizRuntime(self.llm, PRO_MODEL, FLASH_MODEL)
+        return self.llm
+
+    def session(self, **kw):  # type: ignore[no-untyped-def]
+        return attack_session(self.w.arena, self.read, user_id=kw.pop("user_id", self.ada.id), **kw)
+
+    async def start(self, who: Persona, session_id: str):  # type: ignore[no-untyped-def]
+        return await self.w.client.post(
+            "/api/quiz/quizzes", json={"session_id": session_id}, headers=who.headers
+        )
+
+    async def force_done(self, quiz_id: str, percent: int = 80) -> None:
+        async with self.w.engine.begin() as conn:
+            await conn.execute(
+                text("UPDATE quiz SET status = 'done', finished_at = now() WHERE id = :q"),
+                {"q": quiz_id},
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO quiz_result (quiz_id, rubric_version, mcq_points, item_scores,"
+                    " total_points, percent, feedback)"
+                    " VALUES (:q, 'r1', 3, '{}'::jsonb, 10, :p, 'ok')"
+                ),
+                {"q": quiz_id, "p": percent},
+            )
+
+
+@pytest.fixture
+async def qw(world: World) -> QuizWorld:
+    read = RedactingRead()
+    from app.firewall import ports
+
+    ports.override("read", read)
+    world.read = read  # type: ignore[assignment]
+    people = [
+        await world.persona(n, r)
+        for n, r in (
+            ("Ada", "student"),
+            ("Ben", "student"),
+            ("Cho", "teacher"),
+            ("Dee", "firewall_admin"),
+        )
+    ]
+    q = QuizWorld(world, read, ScriptedLLM(), *people)
+    q.script()
+    return q

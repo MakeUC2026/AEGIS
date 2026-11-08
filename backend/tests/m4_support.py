@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 import pytest
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -35,6 +36,7 @@ class World:
     engine: AsyncEngine
     arena: FakeArenaService
     read: FakeFirewallRead
+    app: FastAPI
 
     async def persona(self, name: str, role: str) -> Persona:
         token = make_token(KEYS, sub=f"auth0|{name.lower()}", roles=[role], name=name)
@@ -59,5 +61,5 @@ async def world(engine: AsyncEngine) -> AsyncIterator[World]:
     app = create_app(settings=settings, engine=engine)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         client.headers["x-aegis-proxy-secret"] = PROXY_SECRET
-        yield World(client=client, engine=engine, arena=arena, read=read)
+        yield World(client=client, engine=engine, arena=arena, read=read, app=app)
     ports.reset()
