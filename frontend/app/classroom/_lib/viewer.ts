@@ -9,8 +9,6 @@ import type { ViewerKind } from "./types";
 
 export interface Viewer {
   id: string;
-  /** SHELL ONLY: mock rows are keyed by display name (see _lib/mock.ts). */
-  ownerKey: string;
   name: string;
   roles: string[];
   kind: ViewerKind;
@@ -21,5 +19,5 @@ export async function requireViewer(): Promise<Viewer> {
   const me = await getMe();
   if (!me) redirect("/");
   const name = me.name ?? me.email ?? "you";
-  return { id: me.id, ownerKey: name, name, roles: me.roles, kind: viewerKind(me.roles) };
+  return { id: me.id, name, roles: me.roles, kind: viewerKind(me.roles) };
 }

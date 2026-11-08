@@ -18,24 +18,37 @@ function Bars({ rows, scale }: { rows: readonly { label: string; value: number }
   );
 }
 
+
+function Empty({ when, text }: { when: boolean; text: string }) {
+  return when ? <p className="muted">{text}</p> : null;
+}
+
+// Fixed 6-column grid: rows of 1, 2, 3 and 1 cards that fill the width, so no holes appear
+// whatever the data size. Stacks to one column on small screens.
 export function InsightsView({ data: I }: { data: InsightsData }) {
+  const stat = (value: React.ReactNode, label: string) => (
+    <div className={styles.stat}>
+      <strong>{value}</strong>
+      <span className="muted">{label}</span>
+    </div>
+  );
   return (
-    <div className={styles.grid}>
-      <section className={`${styles.block} ${styles.wide}`} aria-labelledby="i-overview">
+    <div className={styles.insights}>
+      <section className={`${styles.block} ${styles.span6}`} aria-labelledby="i-overview">
         <h2 id="i-overview">Class overview</h2>
         <div className={styles.stats}>
-          <div className={styles.stat}><strong>{I.overview.students}</strong><span className="muted">students</span></div>
-          <div className={styles.stat}><strong>{I.overview.sessions}</strong><span className="muted">sessions</span></div>
-          <div className={styles.stat}><strong>{I.overview.sessionsPerStudent}</strong><span className="muted">per student</span></div>
-          <div className={styles.stat}><strong>{I.overview.activeToday}</strong><span className="muted">active today</span></div>
+          {stat(I.overview.students, "students")}
+          {stat(I.overview.sessions, "sessions")}
+          {stat(I.overview.sessionsPerStudent, "per student")}
+          {stat(I.overview.activeToday, "active today")}
+          {stat(I.defense.divertCount, "diverts")}
         </div>
       </section>
 
-      <section className={styles.block} aria-labelledby="i-outcomes">
+      <section className={`${styles.block} ${styles.span3}`} aria-labelledby="i-outcomes">
         <h2 id="i-outcomes">Outcomes per level</h2>
-        {I.outcomes.length === 0 ? (
-          <p className="muted">No levels yet.</p>
-        ) : (
+        <Empty when={I.outcomes.length === 0} text="No levels yet." />
+        {I.outcomes.length ? (
           <table className={styles.simpleTable}>
             <thead>
               <tr><th scope="col">Level</th><th scope="col">Sessions</th><th scope="col">Obtained</th><th scope="col">Not yet</th><th scope="col">Rate</th></tr>
@@ -52,54 +65,64 @@ export function InsightsView({ data: I }: { data: InsightsData }) {
               ))}
             </tbody>
           </table>
-        )}
+        ) : null}
       </section>
 
-      <section className={styles.block} aria-labelledby="i-defense">
-        <h2 id="i-defense">Defense activity</h2>
-        <p className={styles.sub}>Rules fired most</p>
-        {I.defense.topRules.length === 0 ? <p className="muted">No rules fired yet.</p> : null}
+      <section className={`${styles.block} ${styles.span3}`} aria-labelledby="i-modes">
+        <h2 id="i-modes">Decisions per mode</h2>
+        <Empty when={I.defense.decisionsPerMode.length === 0} text={`No decisions yet.`} />
+        {I.defense.decisionsPerMode.length ? (
+          <table className={styles.simpleTable}>
+            <thead>
+              <tr><th scope="col">Mode</th><th scope="col">Allow</th><th scope="col">Review</th><th scope="col">Deny</th><th scope="col">Divert</th></tr>
+            </thead>
+            <tbody>
+              {I.defense.decisionsPerMode.map((m) => (
+                <tr key={m.mode}>
+                  <th scope="row">{m.mode}</th>
+                  <td className={styles.num}>{m.allow}</td>
+                  <td className={styles.num}>{m.review}</td>
+                  <td className={styles.num}>{m.deny}</td>
+                  <td className={styles.num}>{m.divert}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
+      </section>
+
+      <section className={`${styles.block} ${styles.span2}`} aria-labelledby="i-rules">
+        <h2 id="i-rules">Rules fired most</h2>
+        <Empty when={I.defense.topRules.length === 0} text={`No rules fired yet.`} />
         <Bars rows={I.defense.topRules.map((r) => ({ label: r.id, value: r.count }))} />
-        <p className={styles.sub} style={{ marginTop: 16 }}>Decisions per mode</p>
-        <table className={styles.simpleTable}>
-          <thead>
-            <tr><th scope="col">Mode</th><th scope="col">Allow</th><th scope="col">Review</th><th scope="col">Deny</th><th scope="col">Divert</th></tr>
-          </thead>
-          <tbody>
-            {I.defense.decisionsPerMode.map((m) => (
-              <tr key={m.mode}>
-                <th scope="row">{m.mode}</th>
-                <td className={styles.num}>{m.allow}</td>
-                <td className={styles.num}>{m.review}</td>
-                <td className={styles.num}>{m.deny}</td>
-                <td className={styles.num}>{m.divert}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p className={styles.sub} style={{ marginTop: 12 }}>Diverts in total: {I.defense.divertCount}</p>
       </section>
 
-      <section className={styles.block} aria-labelledby="i-families">
+      <section className={`${styles.block} ${styles.span2}`} aria-labelledby="i-families">
         <h2 id="i-families">Attack families</h2>
-        <Bars rows={I.attackFamilies.map((f) => ({ label: f.family, value: f.count }))} />
+        <Empty when={I.attackFamilies.length === 0} text={`No attacks classified yet.`} />
+        <Bars rows={I.attackFamilies.map((f) => ({ label: f.family.replaceAll("_", " "), value: f.count }))} />
       </section>
 
-      <section className={styles.block} aria-labelledby="i-patterns">
+      <section className={`${styles.block} ${styles.span2}`} aria-labelledby="i-patterns">
         <h2 id="i-patterns">Risky patterns</h2>
+        <Empty when={I.riskyPatterns.length === 0} text={`No risky patterns matched yet.`} />
         <Bars rows={I.riskyPatterns.map((p) => ({ label: p.id, value: p.count }))} />
       </section>
 
-      <section className={`${styles.block} ${styles.wide}`} aria-labelledby="i-quiz">
+      <section className={`${styles.block} ${styles.span6}`} aria-labelledby="i-quiz">
         <h2 id="i-quiz">Quiz</h2>
-        <div className={styles.stats}>
-          <div className={styles.stat}><strong>{I.quiz.taken}</strong><span className="muted">taken</span></div>
-          <div className={styles.stat}><strong>{I.quiz.open}</strong><span className="muted">open</span></div>
-          <div className={styles.stat}><strong>{I.quiz.averagePercent === null ? "-" : `${I.quiz.averagePercent}%`}</strong><span className="muted">average score</span></div>
+        <div className={styles.quizRow}>
+          <div className={styles.stats}>
+            {stat(I.quiz.taken, "taken")}
+            {stat(I.quiz.open, "open")}
+            {stat(I.quiz.averagePercent === null ? "-" : `${I.quiz.averagePercent}%`, "average score")}
+          </div>
+          <div>
+            <p className={styles.sub}>Lowest rubric items (average out of 3)</p>
+            <Empty when={I.quiz.lowestItems.length === 0} text="No graded quizzes yet." />
+            <Bars scale={3} rows={I.quiz.lowestItems.map((x) => ({ label: x.title, value: x.average }))} />
+          </div>
         </div>
-        <p className={styles.sub} style={{ marginTop: 16 }}>Rubric items the class scores lowest on (average out of 3)</p>
-        {I.quiz.lowestItems.length === 0 ? <p className="muted">No graded quizzes yet.</p> : null}
-        <Bars scale={3} rows={I.quiz.lowestItems.map((x) => ({ label: x.title, value: x.average }))} />
       </section>
     </div>
   );

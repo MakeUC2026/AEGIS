@@ -91,6 +91,16 @@ class FakeFirewallAdmin:
             raise NotFound(rule_id)
         return self._put(rule_id, None, admin_id, enabled=enabled)
 
+    async def set_rule_enabled(self, rule_id: str, enabled: bool, admin_id: str) -> RuleDef:
+        if rule_id not in self.rules:
+            raise NotFound(rule_id)
+        return self._put(rule_id, None, admin_id, enabled=enabled)
+
+    async def restore_rule(self, rule_id: str, admin_id: str) -> RuleDef:
+        if rule_id not in self.rules:
+            raise NotFound(rule_id)
+        return self._put(rule_id, None, admin_id, deprecated=False)
+
     async def list_events(self, filters: EventFilter) -> list[EventRow]:
         return []
 

@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { AccessDenied, Pill, ScreenNav, Unavailable } from "../_components/Common";
+import { AccessDenied, Pill, Unavailable } from "../_components/Common";
 import { RotateSecret } from "../_components/RotateSecret";
 import styles from "../_components/classroom.module.css";
 import { toSecrets, type ApiSecretList } from "../_lib/adapt";
@@ -19,14 +19,13 @@ export default async function Page() {
   const secrets = loaded.ok ? toSecrets(loaded.data) : [];
   return (
     <main>
-      <div className={styles.head}>
-        <h1>Secrets</h1>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow learn">Classroom</p>
+          <h1>Secrets</h1>
+          <p className="muted">Rotating gives new sessions a fresh secret. Running sessions keep theirs.</p>
+        </div>
       </div>
-      <p className={styles.lead}>
-        Each level has one secret. Rotating it gives new sessions a fresh one; running sessions keep theirs. Every rotation is
-        written to the audit log.
-      </p>
-      <ScreenNav kind={viewer.kind} current="secrets" />
       {!loaded.ok ? (
         loaded.reason === "forbidden" ? (
           <AccessDenied what="secret status" home="/classroom" />

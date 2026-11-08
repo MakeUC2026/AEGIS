@@ -371,6 +371,20 @@ async def test_builtin_switch(ctx: Ctx) -> None:
     assert r.status_code == 200 and r.json()["enabled"] is False
 
 
+async def test_any_rule_switches_and_a_deprecated_rule_restores(ctx: Ctx) -> None:
+    rid = (await ctx.call("POST", "/api/admin/rules", RULE_BODY)).json()["rule_id"]
+    r = await ctx.call("POST", f"/api/admin/rules/{rid}/enabled", {"enabled": False})
+    assert r.status_code == 200 and r.json()["enabled"] is False
+    await ctx.call("POST", f"/api/admin/rules/{rid}/deprecate")
+    r = await ctx.call("POST", f"/api/admin/rules/{rid}/restore")
+    assert r.status_code == 200 and r.json()["deprecated"] is False
+    assert r.json()["form"]["note"] == RULE_BODY["note"]  # restore keeps the rule as it was
+    assert (await ctx.call("POST", "/api/admin/rules/R-404/restore")).status_code == 404
+    assert (
+        await ctx.call("POST", "/api/admin/rules/R-404/enabled", {"enabled": True})
+    ).status_code == 404
+
+
 # --- levels (M3-X35) --------------------------------------------------------------------------
 
 

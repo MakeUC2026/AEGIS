@@ -1,70 +1,116 @@
-import s from "../admin.module.css";
-import { tickets } from "../mock";
+"use client";
 
-// A-07 shell. D-01 adds 2-3 s polling, the live countdown and the decide calls.
+import { useEffect, useState } from "react";
+
+import { apiFetch } from "@/lib/api";
+
+import type { Ticket } from "../_ui/types";
+import { ConsoleTabs, PageHead, State, act, useApi, words } from "../_ui/ui";
+import s from "../_ui/console.module.css";
+
+// Review queue (PRD §8.3): held turns, priority alerts first, decide before they expire.
 export default function ReviewQueue() {
-  const sorted = [...tickets].sort((a, b) => Number(b.priority_alert) - Number(a.priority_alert));
+  const api = useApi<Ticket[]>("admin/tickets", 3_000);
+  const [selected, setSelected] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  async function decide(id: string, decision: "ok" | "not_ok") {
+    setBusy(true);
+    setError(await act(() => apiFetch(`admin/tickets/${id}/decision`, { method: "POST", json: { decision } }), api.reload));
+    setBusy(false);
+  }
+
   return (
-    <section aria-labelledby="h-review">
-      <h2 id="h-review">Review queue</h2>
-      <p className={s.note}>Mock data. Priority alerts (99+) stay at the top.</p>
-      <div className={s.tableWrap}>
-        <table className={s.table}>
-          <thead>
-            <tr>
-              <th>Ticket</th>
-              <th>Stage</th>
-              <th>Student command</th>
-              <th>Held</th>
-              <th>Score</th>
-              <th>Rules</th>
-              <th>Expires</th>
-              <th>Decision</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((t) => (
-              <tr key={t.ticket_id} className={t.priority_alert ? s.priority : undefined}>
-                <td>
-                  {t.ticket_id}
-                  {t.priority_alert && <span className={s.tag}>priority</span>}
-                </td>
-                <td>{t.stage}</td>
-                <td>{t.student_command}</td>
-                <td>
-                  {t.held_tool ? (
-                    <code>
-                      {t.held_tool} {JSON.stringify(t.held_args)}
-                    </code>
-                  ) : (
-                    (t.held_reply ?? <span className="muted">player message</span>)
-                  )}
-                </td>
-                <td>
-                  <strong>{t.sentinel_score}</strong>
-                  <div className="muted">
-                    {Object.entries(t.score_breakdown)
-                      .map(([k, v]) => `${k}: ${v ?? "n/a"}`)
-                      .join(", ")}
+    <main className="wide">
+      <PageHead title="Firewall console" line="Held turns wait here. Nothing runs until you decide." />
+      <ConsoleTabs />
+      <State api={api} empty="Nothing awaiting review.">
+        {(rows) => {
+          const sorted = [...rows].sort((a, b) => Number(b.priority_alert) - Number(a.priority_alert) || a.expires_at.localeCompare(b.expires_at));
+          const t = sorted.find((x) => x.ticket_id === selected) ?? sorted[0];
+          const left = Math.max(0, Math.round((Date.parse(t.expires_at) - now) / 1000));
+          return (
+            <div className={s.logs}>
+              <section className="panel" style={{ padding: 0 }} aria-label="Held turns">
+                <ul className={s.list}>
+                  {sorted.map((x) => (
+                    <li key={x.ticket_id}>
+                      <button type="button" className={`${s.item} ${x.priority_alert ? s.priority : ""}`} aria-pressed={t.ticket_id === x.ticket_id} onClick={() => setSelected(x.ticket_id)}>
+                        <time dateTime={x.expires_at}>{Math.max(0, Math.round((Date.parse(x.expires_at) - now) / 1000))}s</time>
+                        <span className="chip" data-tone={x.priority_alert ? "bad" : "warn"}>
+                          {x.priority_alert ? "priority" : words(x.stage)}
+                        </span>
+                        <span className={s.what}>
+                          <b>{x.student_command}</b>
+                          <small>score {x.sentinel_score}</small>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+              <aside className={`panel ${s.detail}`} aria-label="Ticket">
+                <div className={s.panelHead} style={{ marginBottom: 0 }}>
+                  <h2>{words(t.stage)}</h2>
+                  <span className="chip" data-tone={left < 15 ? "bad" : "warn"}>
+                    {left}s left
+                  </span>
+                </div>
+                <p className={s.attempt} style={{ margin: 0 }}>
+                  &gt; {t.student_command}
+                </p>
+                {t.held_tool ? (
+                  <div>
+                    <p className="muted">Held tool call</p>
+                    <pre className={s.json}>
+                      {t.held_tool} {JSON.stringify(t.held_args, null, 2)}
+                    </pre>
                   </div>
-                </td>
-                <td>{t.rule_ids.join(", ")}</td>
-                <td>
-                  <time dateTime={t.expires_at}>{t.expires_at.slice(11, 19)} UTC</time>
-                </td>
-                <td className={s.actions}>
-                  <button type="button" className="button" disabled>
-                    ok
+                ) : null}
+                {t.held_reply ? (
+                  <div>
+                    <p className="muted">Held reply</p>
+                    <pre className={s.json}>{t.held_reply}</pre>
+                  </div>
+                ) : null}
+                <dl className={s.kv}>
+                  <dt>Sentinel</dt>
+                  <dd>{t.sentinel_score}</dd>
+                  <dt>Breakdown</dt>
+                  <dd>
+                    {Object.entries(t.score_breakdown)
+                      .map(([k, v]) => `${k} ${v ?? "not run"}`)
+                      .join(" · ")}
+                  </dd>
+                  <dt>Rules</dt>
+                  <dd className="mono">{t.rule_ids.join(", ") || "none"}</dd>
+                  <dt>Session</dt>
+                  <dd className="mono">{t.fw_session_id}</dd>
+                </dl>
+                <div className={s.actions}>
+                  <button className="btn-primary" type="button" disabled={busy} onClick={() => decide(t.ticket_id, "ok")}>
+                    OK, let it run
                   </button>
-                  <button type="button" className="button" disabled>
-                    not ok (Human Deny)
+                  <button className="btn-alt" type="button" disabled={busy} onClick={() => decide(t.ticket_id, "not_ok")}>
+                    Not OK · human deny
                   </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
+                </div>
+                {error ? (
+                  <p className={s.err} role="alert">
+                    {error}
+                  </p>
+                ) : null}
+              </aside>
+            </div>
+          );
+        }}
+      </State>
+    </main>
   );
 }

@@ -5,32 +5,25 @@ import { getMe, serverGet } from "@/lib/server-api";
 
 interface LevelsView {
   levels: LevelCard[];
-  rules: { rule_id: string; applies_on: string; action: string; note: string }[];
   remaining_messages: number;
 }
 
-// Start screen (PRD §6.1): level cards, rule catalog, remaining messages.
+// Start screen (PRD §6.1): level cards and remaining messages. The rule catalog lives on the
+// Knowledge page (Classroom), so this screen stays a single choice.
 export default async function ArenaPage() {
   if (!(await getMe())) redirect("/");
   const view = await serverGet<LevelsView>(["arena", "levels"]);
   return (
     <main>
-      <h1>Arena</h1>
-      <p className="muted">
-        Pick a level and talk the assistant into revealing its secret. {view.remaining_messages} messages left this hour.
-      </p>
+      <div className="page-head">
+        <div>
+          <p className="eyebrow">Agent Framework</p>
+          <h1>Pick a level</h1>
+          <p className="muted">Get the assistant to reveal its secret.</p>
+        </div>
+        <span className="chip">{view.remaining_messages} messages left this hour</span>
+      </div>
       <LevelPicker levels={view.levels} />
-      <section className="panel rules" aria-label="Rules the firewall runs">
-        <h2>Rules the firewall runs</h2>
-        <p className="muted">Off computes these in shadow only; Basic and Strict enforce them.</p>
-        <ul>
-          {view.rules.map((r) => (
-            <li key={r.rule_id}>
-              <strong>{r.rule_id}</strong> · {r.note} <span className="muted">({r.applies_on.replaceAll("_", " ")}, {r.action})</span>
-            </li>
-          ))}
-        </ul>
-      </section>
     </main>
   );
 }

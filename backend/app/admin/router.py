@@ -87,14 +87,21 @@ BenignDep = Annotated[Benign, Depends(get_benign)]
 EngineDep = Annotated[AsyncEngine, Depends(_engine)]
 
 
-async def _run[T](awaitable: Awaitable[T]) -> T:
-    """Typed provider and decision errors become HTTP errors; nothing else is swallowed."""
+async def _run[T](awaitable: Awaitable[T], *, refusals: bool = True) -> T:
+    """Typed provider and decision errors become HTTP errors; nothing else is swallowed.
+    `refusals=False` lets a route see the provider's `ConflictError` itself (ticket decisions)."""
     try:
         return await awaitable
     except (decisions.Missing, NotFound) as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not found") from exc
     except decisions.Conflict as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except ConflictError as exc:
+        if not refusals:
+            raise
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, str(exc)
+        ) from exc  # a refusal, with its reason
     except decisions.Invalid as exc:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT, {"reasons": exc.reasons}
@@ -181,7 +188,10 @@ async def decide_ticket(
     ticket_id: str, body: TicketDecisionBody, user: Admin, engine: EngineDep
 ) -> dict[str, str]:
     try:
-        await _run(ports.get_firewall_admin().decide_ticket(ticket_id, body.decision, user.id))
+        await _run(
+            ports.get_firewall_admin().decide_ticket(ticket_id, body.decision, user.id),
+            refusals=False,
+        )
     except ConflictError as exc:  # already decided or expired (409, E-46, M3-X34)
         reason = await _conflict_reason(engine, ticket_id)
         detail = {"reason": reason, "message": _CONFLICT_MESSAGE[reason]}
@@ -244,9 +254,16 @@ async def deprecate_rule(rule_id: str, user: Admin) -> RuleDef:
 
 
 @router.post("/rules/{rule_id}/enabled")
-async def set_builtin_enabled(rule_id: str, body: EnabledBody, user: Admin) -> RuleDef:
+async def set_rule_enabled(rule_id: str, body: EnabledBody, user: Admin) -> RuleDef:
+    """Switch any rule on or off (built-ins and form rules alike)."""
     admin = ports.get_firewall_admin()
-    return await _run(admin.set_builtin_enabled(rule_id, body.enabled, user.id))
+    return await _run(admin.set_rule_enabled(rule_id, body.enabled, user.id))
+
+
+@router.post("/rules/{rule_id}/restore")
+async def restore_rule(rule_id: str, user: Admin) -> RuleDef:
+    """Undo a deprecation (the console's soft delete). History is untouched."""
+    return await _run(ports.get_firewall_admin().restore_rule(rule_id, user.id))
 
 
 # --- levels (C8, M3-X35) ----------------------------------------------------------------------

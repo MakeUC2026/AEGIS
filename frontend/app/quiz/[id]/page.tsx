@@ -29,7 +29,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     );
   }
   const run = toQuizRun(loaded.data);
-  const teacher = viewer.kind === "teacher";
+  const teacher = viewer.kind !== "student"; // staff (teacher or admin) read, never act
   const finished = run.status === "done" || run.status === "grading_failed";
   const resultLoaded = finished ? await load<ApiResult>(["quiz", "quizzes", id, "result"]) : null;
   const sessionHref = `/classroom/sessions/${encodeURIComponent(run.sessionId)}`;

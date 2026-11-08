@@ -52,11 +52,11 @@ async def _insights(w: World, who, **params):  # type: ignore[no-untyped-def]
     return await w.client.get(URL, params=params, headers=who.headers)
 
 
-async def test_x03_student_and_firewall_admin_are_refused_teacher_allowed(world: World) -> None:
+async def test_x03_student_is_refused_staff_allowed(world: World) -> None:
     cho, ada, *_ = await _seed(world)
     dee = await world.persona("Dee", "firewall_admin")
     assert (await _insights(world, ada)).status_code == 403
-    assert (await _insights(world, dee)).status_code == 403
+    assert (await _insights(world, dee)).status_code == 200  # admin reads everything
     assert (await _insights(world, cho)).status_code == 200
     assert (await world.client.get(URL)).status_code == 401
 
