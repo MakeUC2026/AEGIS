@@ -21,7 +21,8 @@ async def test_simultaneous_starts_run_one_generation(qw: QuizWorld) -> None:
     results = await asyncio.gather(*(qw.start(qw.ada, s.id) for _ in range(3)))
     codes = sorted(r.status_code for r in results)
     assert codes.count(200) >= 1 and set(codes) <= {200, 409}
-    assert len(llm.json_calls) == codes.count(200)  # every paid generation produced a quiz
+    # one generation; a late start that finds the committed quiz resumes it (200, no model call)
+    assert len(llm.json_calls) == 1
     assert (await qw.start(qw.ada, s.id)).status_code == 200  # afterwards it simply resumes
     async with qw.w.engine.connect() as conn:
         assert (await repo.attempts(conn, session_id=uuid.UUID(s.id), user_id=None)).__len__() == 1
