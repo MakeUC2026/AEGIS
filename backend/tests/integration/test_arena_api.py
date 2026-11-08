@@ -17,7 +17,7 @@ from app.arena.seed import seed
 from app.arena.service import ArenaService
 from app.auth.testing import DevKeys, make_keys, make_token
 from app.config import Settings
-from app.contracts.arena import LevelConfigUpdate
+from app.contracts.arena import LevelConfigUpdate, SessionFilters
 from app.contracts.fakes import FakeDelay, FakeFirewall, FakeFirewallRead, fake_turn
 from app.contracts.firewall import BotUnavailable, RegisterSession, ToolEffect
 from app.firewall import ports
@@ -162,6 +162,7 @@ async def test_hourly_cap_per_student(engine: AsyncEngine) -> None:  # M1-X09
         assert (await c.send(other["id"], "m1", sub="auth0|other")).status_code == 200
 
 
+# Edge cases: M1-X10
 async def test_not_sent_retry_is_free_and_returns_result(
     ctx: Ctx, engine: AsyncEngine
 ) -> None:  # X10
@@ -195,6 +196,7 @@ async def test_budget_exhausted_blocks_before_aff(engine: AsyncEngine) -> None: 
         assert c.fw.calls == 0
 
 
+# Edge cases: M1-X15 M1-X16 M1-X17
 async def test_win_compromise_and_keep_chatting(ctx: Ctx, engine: AsyncEngine) -> None:  # X15-X17
     s = await ctx.start()
     ctx.fw.script(fake_turn(status="replied", diverted=True))
@@ -227,6 +229,7 @@ async def test_review_lock_poll_and_human_deny(ctx: Ctx) -> None:  # M1-X18, PRD
     assert (await ctx.start("lvl-2"))["id"]  # start-new-session always available
 
 
+# Edge cases: M1-X19 M1-X20
 async def test_close_with_pending_ticket_and_closed_session(ctx: Ctx) -> None:  # X19, X20
     s = await ctx.start("lvl-2")
     ctx.fw.script(fake_turn(status="awaiting_review"))
@@ -240,6 +243,7 @@ async def test_close_with_pending_ticket_and_closed_session(ctx: Ctx) -> None:  
     assert (await ctx.send(s["id"], "m2")).status_code == 409
 
 
+# Edge cases: M1-X21 M1-X22
 async def test_recap_locked_until_close_or_unlock(
     ctx: Ctx, engine: AsyncEngine
 ) -> None:  # X21, X22, E-54
@@ -283,6 +287,7 @@ async def test_fingerprint_only_on_divert_enabled_levels(ctx: Ctx) -> None:  # M
     assert ctx.fw.received[-1].client.fingerprint_hash == "f" * 64
 
 
+# Edge cases: M1-X13 M1-X14
 async def test_level_and_secret_snapshots(ctx: Ctx, engine: AsyncEngine) -> None:  # X13, X14
     old = await ctx.start("lvl-2")
     svc = ArenaService(engine)
@@ -298,6 +303,7 @@ async def test_level_and_secret_snapshots(ctx: Ctx, engine: AsyncEngine) -> None
     assert ctx.fw.registered[1].level.review_timeout_s == 60
 
 
+# Edge cases: M1-X29
 async def test_register_failure_creates_no_session(ctx: Ctx, engine: AsyncEngine) -> None:  # X29
     async def boom(req: Any) -> Any:
         raise BotUnavailable("aff down")
@@ -386,3 +392,61 @@ async def test_concurrent_ticket_polls_settle_once(ctx: Ctx) -> None:  # finding
     results = await asyncio.gather(*(ctx.client.get(url, headers=ctx.h()) for _ in range(4)))
     assert {r.status_code for r in results} == {200}
     assert {r.json()["status"] for r in results} == {"replied"}
+
+
+# --- D-04 edge-case audit: gaps filled -----------------------------------------------------
+
+
+async def test_divert_without_delivery_records_no_compromise(
+    ctx: Ctx, engine: AsyncEngine
+) -> None:  # M1-X16
+    s = await ctx.start()
+    ctx.fw.script(fake_turn(status="replied", diverted=True))
+    assert (await ctx.send(s["id"], "m1")).json()["won"] is False
+    async with engine.connect() as conn:
+        results = (await conn.execute(text("SELECT count(*) FROM results"))).scalar_one()
+        comp = (
+            await conn.execute(text("SELECT compromised_at FROM secrets WHERE level_id='lvl-1'"))
+        ).scalar_one()
+        won_at = (
+            await conn.execute(
+                text("SELECT secret_obtained_at FROM arena_sessions WHERE id = CAST(:i AS uuid)"),
+                {"i": s["id"]},
+            )
+        ).scalar_one()
+    assert (results, comp, won_at) == (0, None, None)
+
+
+@pytest.mark.parametrize(("table", "status"), [("secrets", 503), ("levels", 404)])
+async def test_missing_level_or_secret_version_registers_nothing(
+    ctx: Ctx, engine: AsyncEngine, table: str, status: int
+) -> None:  # M1-X29
+    async with engine.begin() as conn:
+        if table == "levels":
+            await conn.execute(text("DELETE FROM secrets WHERE level_id = 'lvl-2'"))
+        await conn.execute(text(f"DELETE FROM {table} WHERE level_id = 'lvl-2'"))  # noqa: S608
+    r = await ctx.client.post("/api/arena/sessions", json={"level_id": "lvl-2"}, headers=ctx.h())
+    assert r.status_code == status
+    assert r.json()["detail"] == "level not available"
+    assert ctx.fw.registered == []  # nothing reached the AFF
+    async with engine.connect() as conn:
+        assert (await conn.execute(text("SELECT count(*) FROM arena_sessions"))).scalar_one() == 0
+
+
+async def test_player_and_c4_share_one_user_id(ctx: Ctx, engine: AsyncEngine) -> None:  # M1-X07
+    s = await ctx.start(sub="auth0|same-person")
+    ctx.fw.script(fake_turn(secret_delivered=True))
+    await ctx.send(s["id"], "m1", sub="auth0|same-person")
+    async with engine.connect() as conn:
+        uid = str(
+            (
+                await conn.execute(
+                    text("SELECT id FROM users WHERE auth0_sub = 'auth0|same-person'")
+                )
+            ).scalar_one()
+        )
+    # Classroom (M4) reads arena results through C4 by users.id.
+    rows = await ArenaService(engine).list_sessions(SessionFilters(user_id=uid))
+    assert [(r.id, r.user_id) for r in rows] == [(s["id"], uid)]
+    assert rows[0].secret_obtained_at is not None
+    assert ctx.fw.registered[-1].owner_ref == uid  # the AFF sees the same identity

@@ -81,6 +81,7 @@ async def test_healthz_needs_no_auth(client: AsyncClient) -> None:
 # --- M1-X01: 401 cases ---------------------------------------------------------------
 
 
+# Edge cases: M1-X01
 async def test_missing_token_is_401(client: AsyncClient) -> None:
     assert (await client.get("/api/me")).status_code == 401
 
@@ -136,6 +137,7 @@ async def test_new_user_without_role_is_student_and_upserted_once(
     assert [tuple(r) for r in rows] == [("Ada", "ada@school.example", "student")]
 
 
+# Edge cases: M1-X04
 async def test_concurrent_first_calls_create_one_user(
     client: AsyncClient, keys: DevKeys, engine: AsyncEngine
 ) -> None:
@@ -148,6 +150,7 @@ async def test_concurrent_first_calls_create_one_user(
     assert count == 1
 
 
+# Edge cases: M1-X02
 async def test_student_on_teacher_and_admin_routes_is_403(
     client: AsyncClient, keys: DevKeys
 ) -> None:
@@ -162,6 +165,7 @@ async def test_teacher_on_admin_route_is_403(client: AsyncClient, keys: DevKeys)
     assert (await client.get("/api/probe/admin", headers=headers)).status_code == 403
 
 
+# Edge cases: M1-X05
 async def test_dual_role_user_gets_both(client: AsyncClient, keys: DevKeys) -> None:
     headers = _bearer(keys, sub="auth0|both", roles=["teacher", "firewall_admin"])
     me = (await client.get("/api/me", headers=headers)).json()
@@ -170,6 +174,7 @@ async def test_dual_role_user_gets_both(client: AsyncClient, keys: DevKeys) -> N
     assert (await client.get("/api/probe/admin", headers=headers)).status_code == 200
 
 
+# Edge cases: M1-X06
 async def test_role_comes_from_token_not_db_cache(
     client: AsyncClient, keys: DevKeys, engine: AsyncEngine
 ) -> None:
