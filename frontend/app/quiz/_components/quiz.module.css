@@ -204,3 +204,13 @@
     max-width: 100%;
   }
 }
+
+.error {
+  color: var(--bad, #b3261e);
+  margin: 8px 0 0;
+}
+.feedback {
+  white-space: pre-wrap;
+  line-height: 1.55;
+  margin: 0;
+}
