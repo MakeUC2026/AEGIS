@@ -5,8 +5,8 @@ timeout raises it to at least the Deny threshold. Bands come from the level's th
 
 Hard overrides (each can only make the decision stricter):
 - a rule with action review, deny or divert forces at least that action;
-- an approved risky pattern, B-02 forged approval, an invalid tool call, any rule failure
-  or a risky-history error forces Deny (fail closed);
+- an approved risky pattern, B-02 forged approval, an invalid tool call, an oversized item
+  (PRD §7.6), any rule failure or a risky-history error forces Deny (fail closed);
 - B-01 (secret in an outbound item) forces Deny in Basic and Off, Divert in Strict.
 Strictest wins: Divert > Deny > Review > Allow.
 
@@ -48,6 +48,7 @@ class GateInput:
     judge_error: bool = False
     leak: LeakMatch | None = None
     canonical_error: bool = False
+    limit_exceeded: bool = False  # Off truncates instead, so this only shadows there
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,7 @@ def _forced(inp: GateInput) -> list[GateAction]:
         bool(inp.rules.failures)
         or inp.history_error
         or inp.canonical_error
+        or inp.limit_exceeded
         or inp.layer1.forged_approval
         or (inp.history is not None and inp.history.forced_deny)
     )

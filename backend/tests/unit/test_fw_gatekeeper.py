@@ -253,3 +253,17 @@ def test_property_forcing_signals_never_weaken(score: int, mode: str) -> None:
         {"canonical_error": True},
     ):
         assert ORDER[decide(_gate(mode, score, **extra)).decision] >= max(base, ORDER["deny"])
+
+
+# --- B-08: oversized items (PRD §7.6) -----------------------------------------------------------
+
+
+@pytest.mark.parametrize("mode", ["basic", "strict"])
+def test_oversized_item_is_denied_in_enforcing_modes(mode: str) -> None:
+    out = decide(_gate(mode, 0, limit_exceeded=True))
+    assert out.decision == "deny" and "LIMIT" not in out.rule_ids
+
+
+def test_oversized_item_in_off_is_truncated_with_a_shadow_deny() -> None:
+    out = decide(_gate("off", 0, limit_exceeded=True))
+    assert (out.decision, out.shadow_decision) == ("allow", "deny")
