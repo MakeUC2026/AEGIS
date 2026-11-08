@@ -1,6 +1,9 @@
 """Demo seed and reset (M1 D-02): demo accounts, scenario, levels, secrets, and every other
 part's seed that exists on this branch (M2 rules, M3/M4 content). Idempotent unless reset.
 
+Run: `python -m app.demo [--reset] [--confirm-host HOST]` (the container does this on start when
+AEGIS_SEED_ON_START=1, M1 D-03), or `scripts/seed_demo.py` from a checkout.
+
 Reset truncates every app table (all of `public` except `alembic_version`), then reseeds, so
 secrets are new afterwards. `check_target` refuses production and any non-local database
 unless its host is confirmed by name: Tiger Cloud is shared by all four machines.
@@ -8,7 +11,10 @@ unless its host is confirmed by name: Tiger Cloud is shared by all four machines
 
 from __future__ import annotations
 
+import argparse
+import asyncio
 import importlib
+import sys
 from dataclasses import dataclass, field
 
 from sqlalchemy import text
@@ -134,3 +140,41 @@ async def seed_demo(engine: AsyncEngine, reset: bool = False) -> DemoReport:
         await getattr(module, attr)(engine)
         report.parts_seeded.append(module_name)
     return report
+
+
+async def _run(url: str, reset: bool) -> DemoReport:
+    from app.db.engine import make_engine
+
+    engine = make_engine(url)
+    try:
+        return await seed_demo(engine, reset=reset)
+    finally:
+        await engine.dispose()
+
+
+def main(argv: list[str] | None = None) -> int:
+    from app.config import get_settings
+    from app.db.engine import migration_url
+
+    parser = argparse.ArgumentParser(prog="seed_demo", description="Demo seed (M1 D-02)")
+    parser.add_argument("--reset", action="store_true", help="wipe all app data first")
+    parser.add_argument("--confirm-host", help="exact host name of a non-local database")
+    args = parser.parse_args(argv)
+
+    url = migration_url()
+    try:
+        host = check_target(get_settings().app_env, url, args.confirm_host)
+    except UnsafeTarget as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 2
+    print(f"target: {host}{' (RESET)' if args.reset else ''}")
+    report = asyncio.run(_run(url, args.reset))
+    print(f"{'reset and ' if report.reset else ''}seeded: {report.accounts} demo accounts,")
+    print("  scenario, 3 levels, 1 secret per level (kept if they already existed)")
+    print(f"  other parts seeded: {', '.join(report.parts_seeded) or 'none'}")
+    print(f"  not on this branch yet: {', '.join(report.parts_skipped) or 'none'}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

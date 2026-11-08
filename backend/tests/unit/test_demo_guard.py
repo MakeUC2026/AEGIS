@@ -44,3 +44,24 @@ def test_demo_users_match_frontend_dev_sign_in() -> None:
     src = (pathlib.Path(__file__).resolve().parents[3] / "frontend/lib/dev-auth.ts").read_text()
     frontend_ids = re.findall(r'id: "(dev\|[a-z-]+)"', src)
     assert [u.sub for u in DEMO_USERS] == frontend_ids
+
+
+def test_module_cli_refuses_remote_target_without_db_access() -> None:
+    # `python -m app.demo` is what the container runs (AEGIS_SEED_ON_START, M1 D-03).
+    import os
+    import subprocess
+    import sys
+
+    env = {**os.environ, "DATABASE_URL": REMOTE, "APP_ENV": "development"}
+    proc = subprocess.run(  # fixed argv, test only
+        [sys.executable, "-m", "app.demo", "--reset"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+        cwd=pathlib.Path(__file__).resolve().parents[2],
+    )
+    assert proc.returncode == 2, proc.stderr
+    assert "refused" in proc.stderr
+    assert "s3cretpw" not in proc.stderr + proc.stdout
