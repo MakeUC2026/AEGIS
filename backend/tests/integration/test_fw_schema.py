@@ -242,3 +242,18 @@ async def test_pending_forensic_rows_notify_in_the_same_transaction(engine: Asyn
         finally:
             await raw.remove_listener("fw_events_forensic", on_notify)
     assert received == ["evt-loud"]
+
+
+@pytest.mark.parametrize(("rule_id", "ok"), [("R-001", True), ("B-01", True), ("B-001", False),
+                                             ("R-01", False), ("X-001", False)])  # fmt: skip
+async def test_rule_id_format_matches_the_prd(engine: AsyncEngine, rule_id: str, ok: bool) -> None:
+    await _exec(engine, "INSERT INTO rule_sets (version) VALUES (1)")
+    insert = (
+        "INSERT INTO rules (rule_id, version, set_version, builtin, enabled, deprecated, form)"
+        " VALUES (:r, 1, 1, true, true, false, NULL)"
+    )
+    if ok:
+        await _exec(engine, insert, r=rule_id)
+    else:
+        with pytest.raises(IntegrityError):
+            await _exec(engine, insert, r=rule_id)

@@ -59,7 +59,7 @@ _TABLES = (
     """,
     """
     CREATE TABLE rules (
-        rule_id      text NOT NULL CHECK (rule_id ~ '^[RB]-[0-9]{3}$'),
+        rule_id      text NOT NULL CHECK (rule_id ~ '^(R-[0-9]{3}|B-[0-9]{2})$'),
         version      int NOT NULL CHECK (version >= 1),
         set_version  int NOT NULL REFERENCES rule_sets (version),
         builtin      boolean NOT NULL,
@@ -276,18 +276,20 @@ _AFTER = (
     " FOR EACH ROW EXECUTE FUNCTION fw_events_notify()",
 )
 
-_DROP_ORDER = (
-    "trace_back",
-    "fw_events",
-    "fw_tickets",
-    "fw_tool_calls",
-    "fw_mock_state",
-    "fw_conversation",
-    "fw_claims",
-    "fw_manifests",
-    "fw_sessions",
-    "rules",
-    "rule_sets",
+_DOWNGRADE = (
+    "DROP TABLE IF EXISTS trace_back",
+    "DROP TABLE IF EXISTS fw_events",
+    "DROP TABLE IF EXISTS fw_tickets",
+    "DROP TABLE IF EXISTS fw_tool_calls",
+    "DROP TABLE IF EXISTS fw_mock_state",
+    "DROP TABLE IF EXISTS fw_conversation",
+    "DROP TABLE IF EXISTS fw_claims",
+    "DROP TABLE IF EXISTS fw_manifests",
+    "DROP TABLE IF EXISTS fw_sessions",
+    "DROP TABLE IF EXISTS rules",
+    "DROP TABLE IF EXISTS rule_sets",
+    "DROP FUNCTION IF EXISTS fw_events_notify()",
+    "DROP FUNCTION IF EXISTS fw_forbid_change()",
 )
 
 
@@ -297,7 +299,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    for table in _DROP_ORDER:
-        op.execute(f"DROP TABLE IF EXISTS {table}")
-    op.execute("DROP FUNCTION IF EXISTS fw_events_notify()")
-    op.execute("DROP FUNCTION IF EXISTS fw_forbid_change()")
+    for statement in _DOWNGRADE:
+        op.execute(statement)
