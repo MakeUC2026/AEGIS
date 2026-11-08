@@ -22,7 +22,6 @@ Built for **MakeUC 2026** (Nov 7-8, University of Cincinnati). Target tracks: **
 - [Security notes](#security-notes)
 - [Evaluation: proving the firewall works](#evaluation-proving-the-firewall-works)
 - [Demo script](#demo-script)
-- [Submission checklist](#submission-checklist)
 
 ---
 
@@ -78,15 +77,15 @@ The Arena and the Classroom only share two things: the **login** and the **sessi
 
 ## Components and owners
 
-| Component | What it does | Owner |
+| Component | What it does |
 |---|---|---|
-| Auth | One login for both apps, roles (student, teacher), session cookie or token | TBD |
-| Arena chat | Level and config picker, chat with the level bot, shows firewall decisions live | TBD |
-| Agent Firewall | Intercepts tool calls and content, enforces rules deterministically, logs every decision | TBD |
-| Sandbox tools | Fake tools (inbox, database, documents) so nothing real can be harmed | TBD |
-| Classroom dashboard | Sessions list, session detail, class insights | TBD |
-| Teach-back quiz | Context builder, classmate agent, grader with locked rubric, feedback writer | TBD |
-| Evaluation | Scored attack suite and results table | TBD |
+| Auth | One login for both apps, roles (student, teacher), session cookie or token |
+| Arena chat | Level and config picker, chat with the level bot, shows firewall decisions live |
+| Agent Firewall | Intercepts tool calls and content, enforces rules deterministically, logs every decision |
+| Sandbox tools | Fake tools (inbox, database, documents) so nothing real can be harmed |
+| Classroom dashboard | Sessions list, session detail, class insights |
+| Teach-back quiz | Context builder, classmate agent, grader with locked rubric, feedback writer |
+| Evaluation | Scored attack suite and results table |
 
 ### Agent Firewall (core)
 
@@ -139,7 +138,8 @@ Each session stores a **snapshot** of its config, so later edits to a level neve
 - **Backend**: Python, FastAPI
 - **Frontend**: Next.js
 - **Database**: PostgreSQL
-- **LLM provider**: TBD (single provider, no multi-SDK wrapping)
+- **Authentication**: Auth0
+- **LLM provider**: Gemini API
 
 ## Getting started
 
@@ -229,8 +229,6 @@ A scored attack suite (20-30 attacks) covering direct override, role-play, encod
 - false-block rate on legitimate tasks
 - known limits
 
-Results live in `eval/` (TODO: add runner and results file).
-
 ## Demo script
 
 1. Pick a level with the firewall **off**. Hand a judge the keyboard and let them break it.
@@ -239,17 +237,6 @@ Results live in `eval/` (TODO: add runner and results file).
 4. Show class insights and the results table.
 5. Keep a recorded backup of the demo in case Wi-Fi fails.
 
-## Submission checklist
-
-- [ ] Working end-to-end path (attack, firewall decision, quiz, dashboard row)
-- [ ] Results table from the attack suite
-- [ ] Threat model write-up in `docs/`
-- [ ] Devpost description and tracks selected (Security, Education)
-- [ ] Demo video within the required length
-- [ ] Backup recorded demo
-- [ ] Official rules checked: team size, AI tool policy, submission format
-- [ ] Sponsor prizes reviewed and targeted
-
 ## License
 
-TBD.
+MIT License
