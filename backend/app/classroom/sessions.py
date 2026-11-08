@@ -25,6 +25,36 @@ def _keep(
     )
 
 
+def build_row(
+    s: ArenaSession,
+    *,
+    names: dict[str, str | None],
+    levels: dict[str, str],
+    summary: SessionSummary | None,
+    quiz: QuizSummary,
+) -> SessionRow:
+    obtained_at = s.secret_obtained_at
+    return SessionRow(
+        id=s.id,
+        student_id=s.user_id,
+        student_name=names.get(s.user_id),
+        level_id=s.level_id,
+        level_name=levels.get(s.level_id),
+        mode=s.mode,
+        status=s.status,
+        admin_test=s.admin_test,
+        secret_obtained=obtained_at is not None,
+        secret_obtained_at=obtained_at.isoformat() if obtained_at else None,
+        diverted_count=summary.diverted_count if summary else 0,
+        max_sentinel_score=summary.max_sentinel_score if summary else None,
+        started_at=s.started_at.isoformat(),
+        quiz_status=quiz.status,
+        quiz_score=quiz.score,
+        quiz_best=quiz.best,
+        quiz_attempts=quiz.attempts,
+    )
+
+
 async def list_sessions_view(
     user: CurrentUser,
     q: SessionQuery,
@@ -57,31 +87,14 @@ async def list_sessions_view(
     page = kept[q.offset : q.offset + q.limit]
     names = await names_for(engine, {s.user_id for s in page})
     levels = {lv.level_id: lv.name for lv in await arena.list_levels()}
-    rows = []
-    for s in page:
-        summary = summaries.get(s.fw_session_id)
-        quiz = quizzes.get((s.id, s.user_id), NOT_TAKEN)
-        rows.append(
-            SessionRow(
-                id=s.id,
-                student_id=s.user_id,
-                student_name=names.get(s.user_id),
-                level_id=s.level_id,
-                level_name=levels.get(s.level_id),
-                mode=s.mode,
-                status=s.status,
-                admin_test=s.admin_test,
-                secret_obtained=s.secret_obtained_at is not None,
-                secret_obtained_at=s.secret_obtained_at.isoformat()
-                if s.secret_obtained_at
-                else None,
-                diverted_count=summary.diverted_count if summary else 0,
-                max_sentinel_score=summary.max_sentinel_score if summary else None,
-                started_at=s.started_at.isoformat(),
-                quiz_status=quiz.status,
-                quiz_score=quiz.score,
-                quiz_best=quiz.best,
-                quiz_attempts=quiz.attempts,
-            )
+    rows = [
+        build_row(
+            s,
+            names=names,
+            levels=levels,
+            summary=summaries.get(s.fw_session_id),
+            quiz=quizzes.get((s.id, s.user_id), NOT_TAKEN),
         )
+        for s in page
+    ]
     return SessionList(items=rows, total=len(kept))

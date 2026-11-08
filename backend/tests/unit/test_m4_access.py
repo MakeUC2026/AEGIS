@@ -10,7 +10,11 @@ from app.contracts.users import CurrentUser
 
 def _user(*roles: str, uid: str = "u-1") -> CurrentUser:
     return CurrentUser(
-        id=uid, auth0_sub="auth0|x", name=None, email=None, roles=frozenset(roles)  # type: ignore[arg-type]
+        id=uid,
+        auth0_sub="auth0|x",
+        name=None,
+        email=None,
+        roles=frozenset(roles),  # type: ignore[arg-type]
     )
 
 

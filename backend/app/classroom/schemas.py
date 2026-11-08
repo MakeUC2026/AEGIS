@@ -3,6 +3,7 @@ contract field can never reach the browser by accident."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -55,3 +56,88 @@ class SessionRow(BaseModel):
 class SessionList(BaseModel):
     items: list[SessionRow]
     total: int
+
+
+class OutcomeBlock(BaseModel):
+    obtained: bool
+    obtained_at: datetime | None
+    duration_s: int | None
+    echo_excluded: bool
+
+
+class TranscriptRow(BaseModel):
+    message_id: str
+    time: datetime
+    speaker: Literal["student", "bot", "tool"]
+    text: str
+    status: str | None
+    is_decoy: bool
+
+
+class DecisionRow(BaseModel):
+    event_id: str
+    time: datetime
+    message_id: str
+    stage: str
+    decision: str
+    shadow_decision: str | None
+    execution_status: str
+    sentinel_score: int
+    score_breakdown: dict[str, int | None]
+    thresholds_used: dict[str, int]
+    rule_ids: list[str]
+    risky_pattern_ids: list[str]
+
+
+class ConfigBlock(BaseModel):
+    level_id: str
+    level_version: int
+    mode: Mode
+    rule_version: int
+    pattern_version: int
+    thresholds: dict[str, int]
+    weights: dict[str, int]
+    bot_model_id: str
+    judge_model_id: str | None
+
+
+class HeldRow(BaseModel):
+    ticket_id: str
+    stage: str
+    status: Literal["pending", "approved", "human_denied", "expired"]
+    created_at: datetime
+    decided_at: datetime | None
+    decided_by_name: str | None
+
+
+class DivertRow(BaseModel):
+    event_id: str
+    time: datetime
+    stage: str
+    tool: str | None
+    attempted_summary: str
+    decoy_shown: str
+
+
+class ForensicRow(BaseModel):
+    event_id: str
+    attack_family: str
+    atlas_techniques: list[str]
+    summary: str
+    missed_signals: list[str]
+    would_have_blocked_in: list[Mode]
+
+
+class SessionDetail(BaseModel):
+    """`view="student"` carries only the owner's own transcript and outcome; the staff-only
+    blocks are null so a student cannot read the answers before the quiz (PRD 6.2, 13)."""
+
+    view: Literal["staff", "student"]
+    session: SessionRow
+    outcome: OutcomeBlock
+    transcript: list[TranscriptRow]
+    decisions: list[DecisionRow] | None
+    config: ConfigBlock | None
+    held_items: list[HeldRow] | None
+    diverts: list[DivertRow] | None
+    forensics: list[ForensicRow] | None
