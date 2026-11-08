@@ -215,3 +215,21 @@ class Insights(BaseModel):
     attack_families: list[FamilyRow]
     risky_patterns: list[PatternRow]
     quiz: QuizPanel
+
+
+class SecretRow(BaseModel):
+    """Status only. `SecretStatus` carries no secret value and neither does this."""
+
+    level_id: str
+    level_name: str | None
+    secret_version: int
+    compromised: bool
+    compromised_by_id: str | None
+    compromised_by_name: str | None
+    compromised_by_session: str | None
+    compromised_at: datetime | None
+    created_at: datetime
+
+
+class SecretList(BaseModel):
+    items: list[SecretRow]
