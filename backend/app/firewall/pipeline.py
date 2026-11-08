@@ -27,13 +27,14 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from app.contracts.common import ClientMeta, ExecutionStatus, Stage
 from app.contracts.firewall import FeedItem, PlayerStatus, ToolEffect, TurnResult
 from app.contracts.sentinel import JudgePort, RiskyHistoryPort
+from app.firewall.behavior import record_event
 from app.firewall.bot_runner import BotTurn, ToolStep, run_turn
 from app.firewall.canonical import CanonicalCall
 from app.firewall.checks import Checked, check_input, check_output, check_tool_call
 from app.firewall.claims import claim_message, complete_claim, release_claim
 from app.firewall.context import TurnContext, load_context
 from app.firewall.decoys import DecoyGenerator, make_decoy, reply_decoy
-from app.firewall.divert import divert_call, record_divert
+from app.firewall.divert import divert_call
 from app.firewall.events import (
     EventRow,
     SourceTrust,
@@ -94,6 +95,7 @@ class Turn:
     decoys: DecoyGenerator | None = None
     tracer: Tracer = field(default_factory=Tracer.disabled)
     sentinel: Sentinel | None = None  # risky history and the judge (C-08)
+    event_calls: dict[str, CanonicalCall] = field(default_factory=dict)  # event ID -> its call
 
     def result(
         self, status: PlayerStatus, reply: str | None, delivered: bool, ticket: str | None = None
@@ -176,7 +178,10 @@ def tool_hook(engine: AsyncEngine, turn: Turn, clock: Clock) -> Callable[..., An
             turn.effects.append(
                 ToolEffect(call_id=call_id, tool=tool, state="blocked", visible_content=None)
             )
-            turn.later_events.append(_event(turn, checked, "not_executed"))
+            blocked = _event(turn, checked, "not_executed")
+            turn.later_events.append(blocked)
+            if checked.call is not None:  # a denied call may become a pattern candidate (C-09)
+                turn.event_calls[blocked.event_id] = checked.call
             return ToolStep.stop()
         allowed = checked
 
@@ -212,7 +217,7 @@ async def _divert(
                 client=turn.client,
                 student_message=turn.student_message,
                 risky=turn.risky,
-                now=clock(),
+                secret=turn.ctx.secret,
                 tracer=turn.tracer,
             )
     except Exception as exc:  # fail closed: a divert that cannot be recorded is a block
@@ -245,8 +250,16 @@ async def execute_allowed(
     effect, and return what goes back to the bot. `events` gets the ID the call ran under."""
     async with engine.begin() as conn:
         executed = await execute_tool(conn, turn.ctx.fw_session_id, turn.message_id, canonical)
-        for event in events(executed.call_id):
-            await insert_event(conn, event)
+        if not executed.replayed:  # a replayed call's events and records were committed with it
+            for event in events(executed.call_id):
+                await insert_event(conn, event)
+                await record_event(
+                    conn,
+                    turn.risky,
+                    event,
+                    secret=turn.ctx.secret,
+                    student_message=turn.student_message,
+                )
     limited = check_text("tool_result", executed.result, turn.ctx.mode)
     effect = ToolEffect(
         call_id=executed.call_id,
@@ -455,16 +468,23 @@ async def _commit(
         )
     for event in events:
         await insert_event(conn, event)
+        if event.execution_status != "diverted":  # a divert records itself, with its trace
+            await record_event(
+                conn,
+                turn.risky,
+                event,
+                secret=turn.ctx.secret,
+                student_message=turn.student_message,
+                call=turn.event_calls.get(event.event_id),
+            )
     if divert is not None:
-        await record_divert(
-            turn.risky,
+        await record_event(
             conn,
-            event=divert.event,
-            tool=None,
-            args_hash=None,
+            turn.risky,
+            divert.event,
+            secret=turn.ctx.secret,
             student_message=turn.student_message,
             trace_id=divert.trace_id,
-            now=datetime.now(UTC),
         )
     await _drop_parked(conn, turn)
     for row in rows:

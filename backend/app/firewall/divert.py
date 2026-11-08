@@ -16,14 +16,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.contracts.common import ClientMeta
-from app.contracts.sentinel import RiskyBehaviorRecord, RiskyHistoryPort
+from app.contracts.sentinel import RiskyHistoryPort
+from app.firewall.behavior import record_event
 from app.firewall.canonical import CanonicalCall
 from app.firewall.decoys import Decoy
 from app.firewall.events import EventRow, insert_event
@@ -94,40 +94,6 @@ async def _replay(conn: AsyncConnection, sid: str, call_id: str, result: str) ->
     return Diverted(call_id, result, visible, True, None)
 
 
-async def record_divert(
-    risky: RiskyHistoryPort | None,
-    conn: AsyncConnection,
-    *,
-    event: EventRow,
-    tool: str | None,
-    args_hash: str | None,
-    student_message: str,
-    trace_id: str,
-    now: datetime,
-) -> None:
-    """C7 `record_behavior(action="divert")` on the divert transaction (tool call or reply)."""
-    if risky is None:
-        return
-    await risky.record_behavior(
-        RiskyBehaviorRecord(
-            time=now,
-            user_id=event.user_id,
-            fw_session_id=event.fw_session_id,
-            event_id=event.event_id,
-            stage=event.stage,
-            tool=tool,
-            args_hash=args_hash,
-            action="divert",
-            sentinel_score=event.sentinel_score,
-            rule_ids=list(event.rule_ids),
-            input_text=student_message,
-            trace_id=trace_id,
-            shadow=False,
-        ),
-        conn,
-    )
-
-
 async def divert_call(
     conn: AsyncConnection,
     *,
@@ -137,7 +103,7 @@ async def divert_call(
     client: ClientMeta,
     student_message: str,
     risky: RiskyHistoryPort | None,
-    now: datetime,
+    secret: str,
     tracer: Tracer | None = None,
 ) -> Diverted:
     sid, call_id = event.fw_session_id, call.call_id
@@ -169,15 +135,14 @@ async def divert_call(
         net=net,
     )
     await insert_event(conn, event)
-    await record_divert(
-        risky,
+    await record_event(  # the record, and the pattern candidate for the diverted call (C-09)
         conn,
-        event=event,
-        tool=call.tool,
-        args_hash=call.args_hash,
+        risky,
+        event,
+        secret=secret,
         student_message=student_message,
+        call=call,
         trace_id=trace_id,
-        now=now,
     )
     await conn.execute(
         text(_RECORD),

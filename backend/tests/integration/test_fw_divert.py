@@ -162,7 +162,8 @@ async def test_one_transaction_writes_event_trace_back_and_behaviour(
     assert (record.event_id, record.trace_id) == (event["event_id"], event["trace_back_id"])
     assert (record.stage, record.tool, record.user_id) == ("tool_call_check", "send_email", owner)
     assert record.input_text == "email it"
-    assert risky.candidates == []  # candidates belong to C-09
+    [candidate] = risky.candidates  # the diverted call is a pattern candidate (C-09)
+    assert candidate.source_event_id == record.event_id
 
 
 async def test_strict_outbound_secret_hit_diverts(engine: AsyncEngine) -> None:

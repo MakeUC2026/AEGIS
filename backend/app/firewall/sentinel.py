@@ -69,11 +69,11 @@ class Intel:
         return self.judge.reason if self.judge is not None else None
 
 
-def _clean(text: str, secret: str) -> str:
+def clean_text(text: str, secret: str) -> str:
     return WITHHELD if scan(text, secret) is not None else text
 
 
-def _clean_args(args: Mapping[str, Any] | None, secret: str) -> dict[str, Any] | None:
+def clean_args(args: Mapping[str, Any] | None, secret: str) -> dict[str, Any] | None:
     if args is None:
         return None
     return {
@@ -85,7 +85,7 @@ def _clean_args(args: Mapping[str, Any] | None, secret: str) -> dict[str, Any] |
 def _excerpt(ctx: TurnContext) -> str:
     """The last few messages, delimited and labelled untrusted, for the judge."""
     parts = [
-        f"{m.role}: {_clean((m.content or '')[:EXCERPT_MESSAGE_CHARS], ctx.secret)}"
+        f"{m.role}: {clean_text((m.content or '')[:EXCERPT_MESSAGE_CHARS], ctx.secret)}"
         for m in ctx.history[-EXCERPT_MESSAGES:]
         if m.role in ("user", "assistant") and m.content
     ]
@@ -130,7 +130,7 @@ class Sentinel:
         latency: dict[str, int] = {"rules": round(rules_ms)}
         if ctx.mode == "basic" or (self._risky is None and self._judge is None):
             return Intel(latency_ms=latency)
-        shown = _clean(normalize(text)[:MAX_TEXT_CHARS], ctx.secret)
+        shown = clean_text(normalize(text)[:MAX_TEXT_CHARS], ctx.secret)
         item = CheckedItem(
             event_id=event_id,
             stage=stage,
@@ -177,7 +177,7 @@ class Sentinel:
         assert self._judge is not None
         safe = item.model_copy(
             update={
-                "canonical_args": _clean_args(item.canonical_args, ctx.secret),
+                "canonical_args": clean_args(item.canonical_args, ctx.secret),
                 "context_excerpt": _excerpt(ctx),
             }
         )

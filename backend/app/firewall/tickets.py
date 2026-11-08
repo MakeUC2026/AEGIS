@@ -60,7 +60,7 @@ from app.firewall.continuation import continue_turn
 from app.firewall.decoys import DecoyGenerator
 from app.firewall.events import EventRow, insert_event
 from app.firewall.review import Continuation
-from app.firewall.sentinel import make_sentinel
+from app.firewall.sentinel import clean_args, clean_text, make_sentinel
 from app.llm.base import ChatModel
 
 TICKET_SWEEP_INTERVAL_S = 5.0
@@ -72,7 +72,7 @@ _LOCK = (
     "SELECT t.ticket_id, t.fw_session_id, t.message_id, t.stage, t.call_id, t.status,"
     " t.expires_at > now() AS live, t.continuation, t.sentinel_score, t.score_breakdown,"
     " t.rule_ids, t.held_tool, t.held_args, s.owner_ref, s.mode, m.manifest_id, m.level_id,"
-    " m.thresholds"
+    " m.thresholds, s.secret"
     " FROM fw_tickets t JOIN fw_sessions s ON s.fw_session_id = t.fw_session_id"
     " JOIN fw_manifests m ON m.manifest_id = t.manifest_id"
     " WHERE t.ticket_id = :t FOR UPDATE OF t"
@@ -209,7 +209,7 @@ async def _human_deny(
         action="human_deny",
         sentinel_score=int(t["sentinel_score"] or 0),
         rule_ids=list(t["rule_ids"] or ()),
-        input_text=cont.student_message,
+        input_text=clean_text(cont.student_message, t["secret"]),
         trace_id=None,
         shadow=False,
     )
@@ -217,7 +217,7 @@ async def _human_deny(
     if cont.kind == "tool_call" and t["held_tool"]:
         candidate = PatternCandidate(
             tool=t["held_tool"],
-            canonical_args=_json(t["held_args"]) or {},
+            canonical_args=clean_args(_json(t["held_args"]) or {}, t["secret"]) or {},
             source_event_id=event.event_id,
             user_id=owner,
         )
