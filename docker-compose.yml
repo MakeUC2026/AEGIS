@@ -1,0 +1,58 @@
+# Laptop fallback and local dev stack (PRD §3.2, M1 A-11, D-03).
+# Same image and migrations as Tiger Cloud. Values come from .env (see .env.example).
+name: aegis
+
+services:
+  db:
+    image: timescale/timescaledb-ha:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aegis}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-aegis}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - aegis-db:/home/postgres/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aegis} -d ${POSTGRES_DB:-aegis}"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build:
+      context: ./backend
+    command: ["api"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aegis}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-aegis}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  worker:
+    build:
+      context: ./backend
+    command: ["worker"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aegis}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-aegis}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    env_file: .env
+    environment:
+      AEGIS_API_URL: http://api:8000
+    depends_on:
+      - api
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  aegis-db:
