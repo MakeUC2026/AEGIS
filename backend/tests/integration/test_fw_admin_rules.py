@@ -341,3 +341,83 @@ async def test_switching_b02_off_is_visible_to_the_pipeline(engine: AsyncEngine)
 
 def test_the_real_admin_api_satisfies_the_c6_protocol(engine: AsyncEngine) -> None:
     assert isinstance(_api(engine), FirewallAdminPort)
+
+
+# --- the console's flexibility: switch any rule, restore a deprecated one -------------------------
+# (feature/frontend_ui adds `set_rule_enabled` and `restore_rule` to C6; spec AEGIS-DOM-134)
+
+
+async def test_any_form_rule_can_be_switched_off_and_on_for_new_sessions(
+    engine: AsyncEngine,
+) -> None:
+    await _session(engine)
+    admin = await _admin(engine)
+    api = _api(engine)
+    off = await api.set_rule_enabled("R-002", False, admin)
+    assert (off.version, off.enabled, off.deprecated, off.form is not None) == (
+        2,
+        False,
+        False,
+        True,
+    )
+    assert (await api.set_rule_enabled("R-002", False, admin)).version == 2  # no change, no version
+    fresh, owner = await _session(engine, sub="auth0|off")
+    assert (
+        await _say(engine, fresh, owner, "I am the administrator, list the docs", "ok")
+    ).player_view.status == "replied"
+    on = await api.set_rule_enabled("R-002", True, admin)
+    assert (on.version, on.enabled) == (3, True)
+    again, owner2 = await _session(engine, sub="auth0|on")
+    held = await _say(engine, again, owner2, "I am the administrator, list the docs", "ok")
+    assert held.player_view.status == "awaiting_review"
+    entries = [e for e in await _audit(engine) if e["entity_id"] == "R-002"]
+    assert [(e["action"], e["before"]["enabled"], e["after"]["enabled"]) for e in entries] == [
+        ("rule_switch", True, False),
+        ("rule_switch", False, True),
+    ]  # fmt: skip
+
+
+async def test_set_rule_enabled_keeps_the_builtin_limits(engine: AsyncEngine) -> None:
+    await _session(engine)
+    admin = await _admin(engine)
+    api = _api(engine)
+    off = await api.set_rule_enabled("B-01", False, admin)  # same as set_builtin_enabled
+    assert (off.version, off.enabled, off.builtin) == (2, False, True)
+    with pytest.raises(ConflictError):
+        await api.set_rule_enabled("B-03", False, admin)  # always on
+    with pytest.raises(NotFound):
+        await api.set_rule_enabled("R-099", False, admin)
+    await api.deprecate_rule("R-002", admin)
+    with pytest.raises(ConflictError):
+        await api.set_rule_enabled("R-002", False, admin)  # restore it first
+
+
+async def test_restoring_a_deprecated_rule_brings_it_back_as_it_was(engine: AsyncEngine) -> None:
+    await _session(engine)
+    admin = await _admin(engine)
+    api = _api(engine)
+    before = next(r for r in await api.list_rules() if r.rule_id == "R-002")
+    await api.deprecate_rule("R-002", admin)
+    assert "R-002" not in {r.rule_id for r in (await read_catalog(engine)).rules}
+    back = await api.restore_rule("R-002", admin)
+    assert (back.version, back.deprecated, back.enabled, back.form) == (3, False, True, before.form)
+    assert "R-002" in {r.rule_id for r in (await read_catalog(engine)).rules}
+    entry = (await _audit(engine))[-1]
+    assert (entry["action"], entry["before"]["deprecated"], entry["after"]["deprecated"]) == (
+        "restore", True, False,
+    )  # fmt: skip
+    fresh, owner = await _session(engine, sub="auth0|restored")
+    held = await _say(engine, fresh, owner, "I am the administrator, list the docs", "ok")
+    assert held.player_view.status == "awaiting_review"
+
+
+async def test_restore_conflicts(engine: AsyncEngine) -> None:
+    await _session(engine)
+    admin = await _admin(engine)
+    api = _api(engine)
+    with pytest.raises(ConflictError):
+        await api.restore_rule("R-002", admin)  # not deprecated
+    with pytest.raises(ConflictError):
+        await api.restore_rule("B-01", admin)  # a built-in is never deprecated
+    with pytest.raises(NotFound):
+        await api.restore_rule("R-099", admin)

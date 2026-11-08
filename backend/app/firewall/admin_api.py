@@ -334,6 +334,49 @@ class AdminApi:
                 enabled=enabled,
             )
 
+    async def set_rule_enabled(self, rule_id: str, enabled: bool, admin_id: str) -> RuleDef:
+        """Switch any rule on or off for new sessions. Built-ins keep their limits (B-03 is always
+        on); a form rule is switched like a built-in, and a deprecated one must be restored
+        first. A switch that changes nothing writes nothing."""
+        async with self._engine.begin() as conn:
+            await conn.execute(text(_LOCK), {"key": RULE_LOCK_KEY})
+            current = await self._current(conn, rule_id)
+            rule = current[0]
+            if rule.builtin and rule_id not in SWITCHABLE_BUILTINS:
+                raise ConflictError(f"{rule_id} is part of the canonical call form: always on")
+            if rule.deprecated:
+                raise ConflictError("a deprecated rule cannot be switched; restore it first")
+            if rule.enabled == enabled:
+                return rule
+            return await self._add_version(
+                conn,
+                current=current,
+                rule_id=rule_id,
+                admin_id=admin_id,
+                note=f"{'enable' if enabled else 'disable'} {rule_id}",
+                action="builtin_switch" if rule.builtin else "rule_switch",
+                enabled=enabled,
+            )
+
+    async def restore_rule(self, rule_id: str, admin_id: str) -> RuleDef:
+        """Undo a deprecation: a new version, same form, for new sessions. History is kept."""
+        async with self._engine.begin() as conn:
+            await conn.execute(text(_LOCK), {"key": RULE_LOCK_KEY})
+            current = await self._current(conn, rule_id)
+            if current[0].builtin:
+                raise ConflictError("built-in rules are never deprecated")
+            if not current[0].deprecated:
+                raise ConflictError("the rule is not deprecated")
+            return await self._add_version(
+                conn,
+                current=current,
+                rule_id=rule_id,
+                admin_id=admin_id,
+                note=f"restore {rule_id}",
+                action="restore",
+                deprecated=False,
+            )
+
     # --- tickets -------------------------------------------------------------------------------
 
     async def list_pending_tickets(self) -> list[TicketQueueItem]:
