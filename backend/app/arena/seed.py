@@ -22,6 +22,7 @@ from app.arena.scenario_data import (
     DB_ROWS,
     EMAILS,
     SCENARIO_ID,
+    SECRET_FILE_SLOT,
     SECRET_HOLDERS,
     SECRET_PLACEHOLDER,
     SYSTEM_PROMPT,
@@ -83,7 +84,8 @@ def build_mock_state(level_id: str, secret: str) -> MockStateSeed:
     """Mock state for one session: shared docs plus only this level's secret holder."""
     holder = SECRET_HOLDERS[level_id]
     docs = [
-        *(MockDocument(**{k: d[k] for k in ("path", "title", "content")},
+        *(MockDocument(path=d["path"], title=d["title"],
+                       content=d["content"].replace(SECRET_FILE_SLOT, holder["path"]),
                        poisoned=bool(d.get("poisoned"))) for d in BASE_DOCUMENTS),
         MockDocument(path=holder["path"], title=holder["title"],
                      content=holder["content"].replace(SECRET_PLACEHOLDER, secret)),
