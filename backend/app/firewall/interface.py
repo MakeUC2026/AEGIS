@@ -35,6 +35,7 @@ from app.firewall.decoys import DecoyGenerator
 from app.firewall.pipeline import run_message
 from app.firewall.sessions import register_session
 from app.firewall.tickets import check_ticket
+from app.firewall.trace_back import Tracer
 from app.llm.base import ChatMessage, ChatModel, ChatResult, JsonModel, LLMError
 from app.llm.budget import DailyBudget
 from app.llm.gemini import GeminiClient
@@ -61,12 +62,14 @@ class RealFirewall:
         risky: RiskyHistoryPort,
         judge: JudgePort,
         decoys: DecoyGenerator | None = None,
+        tracer: Tracer | None = None,
     ) -> None:
         self._engine = engine
         self._llm = llm
         self._risky = risky
         self._judge = judge
         self._decoys = decoys
+        self._tracer = tracer
 
     async def read_catalog(self) -> Catalog:
         return await read_catalog(self._engine)
@@ -92,6 +95,7 @@ class RealFirewall:
             client,
             risky=self._risky,
             decoys=self._decoys,
+            tracer=self._tracer,
         )
 
     async def check_ticket(self, owner_ref: str, ticket_id: str) -> TicketResult:
@@ -129,6 +133,12 @@ def create() -> FirewallPort:
     settings = get_settings()
     engine = make_engine(settings.database_url)
     llm = build_llm(settings, engine)
+    tracer = Tracer.from_settings(settings.proxy_secret.get_secret_value())
     return RealFirewall(
-        engine, llm, ports.get_risky_history(), ports.get_judge(), build_decoys(settings, llm)
+        engine,
+        llm,
+        ports.get_risky_history(),
+        ports.get_judge(),
+        build_decoys(settings, llm),
+        tracer,
     )

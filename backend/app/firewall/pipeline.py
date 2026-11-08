@@ -40,7 +40,7 @@ from app.firewall.limits import check_text
 from app.firewall.review import Continuation, HeldKind, new_ticket_id, open_ticket
 from app.firewall.textnorm import storable
 from app.firewall.tool_exec import execute_tool
-from app.firewall.trace_back import insert_trace_back, new_trace_id
+from app.firewall.trace_back import NetworkFields, Tracer, insert_trace_back, new_trace_id
 from app.firewall.views import turn_result
 from app.llm.base import ChatMessage, ChatModel, ToolCall
 
@@ -85,6 +85,7 @@ class Turn:
     student_message: str = ""
     risky: RiskyHistoryPort | None = None
     decoys: DecoyGenerator | None = None
+    tracer: Tracer = field(default_factory=Tracer.disabled)
 
     def result(
         self, status: PlayerStatus, reply: str | None, delivered: bool, ticket: str | None = None
@@ -198,6 +199,7 @@ async def _divert(
                 student_message=turn.student_message,
                 risky=turn.risky,
                 now=clock(),
+                tracer=turn.tracer,
             )
     except Exception as exc:  # fail closed: a divert that cannot be recorded is a block
         logger.warning("divert failed closed: %s", type(exc).__name__)
@@ -259,6 +261,7 @@ class ReplyDivert:
     event: EventRow
     trace_id: str
     withheld: str
+    net: NetworkFields
 
 
 def _delivered(turn: Turn, message: str, extra: tuple[str, ...] = ()) -> bool:
@@ -434,6 +437,7 @@ async def _commit(
             event_id=divert.event.event_id,
             client=turn.client,
             tool=None,
+            net=divert.net,
         )
     for event in events:
         await insert_event(conn, event)
@@ -469,6 +473,7 @@ async def _run(
     client: ClientMeta,
     risky: RiskyHistoryPort | None,
     decoys: DecoyGenerator | None,
+    tracer: Tracer | None,
 ) -> TurnResult:
     turn = Turn(
         ctx=await load_context(engine, sid),
@@ -477,6 +482,7 @@ async def _run(
         student_message=message,
         risky=risky,
         decoys=decoys,
+        tracer=tracer or Tracer.disabled(),
     )
     checked_input = check_input(turn.ctx, message, clock())
     turn.checks.append(checked_input)
@@ -521,7 +527,10 @@ async def _divert_reply(
     ctx = turn.ctx
     shown = reply_decoy(ctx.secret, ctx.fw_session_id, leaked=checked.leak is not None)
     trace_id = new_trace_id()
-    event = replace(_event(turn, checked, "diverted"), trace_back_id=trace_id)
+    net = turn.tracer.network(turn.client.ip)
+    event = replace(
+        _event(turn, checked, "diverted"), trace_back_id=trace_id, client_ip_hash=net.ip_hash
+    )
     swapped = replace(
         bot, new_messages=(*bot.new_messages[:-1], ChatMessage(role="assistant", content=shown))
     )
@@ -535,7 +544,7 @@ async def _divert_reply(
             swapped,
             "replied",
             shown,
-            ReplyDivert(event, trace_id, checked.text),
+            ReplyDivert(event, trace_id, checked.text, net),
         )
     except Exception as exc:  # fail closed: nothing was written, so block the reply instead
         logger.warning("reply divert failed closed: %s", type(exc).__name__)
@@ -589,16 +598,18 @@ async def run_message(
     *,
     risky: RiskyHistoryPort | None = None,
     decoys: DecoyGenerator | None = None,
+    tracer: Tracer | None = None,
 ) -> TurnResult:
     """C2 `send_message` core. `client` is used only by Divert's trace-back (C-05, C-07);
-    `risky` receives the Divert record (C7); `decoys` is the decoy generator (C-06)."""
+    `risky` receives the Divert record (C7); `decoys` is the decoy generator (C-06);
+    `tracer` hashes the client IP and looks up its network (C-07)."""
     message = storable(message)  # NUL and lone surrogates cannot be stored (M2-DD-36)
     claim = await claim_message(engine, owner_ref, fw_session_id, message_id, message)
     if claim.stored is not None:
         return claim.stored
     try:
         return await _run(
-            engine, llm, fw_session_id, message_id, message, clock, client, risky, decoys
+            engine, llm, fw_session_id, message_id, message, clock, client, risky, decoys, tracer
         )
     except BaseException:
         await release_claim(engine, fw_session_id, message_id)

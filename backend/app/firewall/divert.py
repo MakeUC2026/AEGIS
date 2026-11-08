@@ -29,7 +29,7 @@ from app.firewall.decoys import Decoy
 from app.firewall.events import EventRow, insert_event
 from app.firewall.mock_tools import ASSISTANT_ADDRESS
 from app.firewall.tool_exec import derived_call_id
-from app.firewall.trace_back import insert_trace_back, new_trace_id
+from app.firewall.trace_back import Tracer, insert_trace_back, new_trace_id
 
 _RECORDED = (
     "SELECT args_hash, state, result FROM fw_tool_calls"
@@ -138,6 +138,7 @@ async def divert_call(
     student_message: str,
     risky: RiskyHistoryPort | None,
     now: datetime,
+    tracer: Tracer | None = None,
 ) -> Diverted:
     sid, call_id = event.fw_session_id, call.call_id
     recorded = (
@@ -155,7 +156,8 @@ async def divert_call(
         return await _replay(conn, sid, call_id, recorded["result"] or "")
 
     trace_id = new_trace_id()
-    event = replace(event, call_id=call_id, trace_back_id=trace_id)
+    net = (tracer or Tracer.disabled()).network(client.ip)
+    event = replace(event, call_id=call_id, trace_back_id=trace_id, client_ip_hash=net.ip_hash)
     await insert_trace_back(
         conn,
         trace_id=trace_id,
@@ -164,6 +166,7 @@ async def divert_call(
         event_id=event.event_id,
         client=client,
         tool=call.tool,
+        net=net,
     )
     await insert_event(conn, event)
     await record_divert(
