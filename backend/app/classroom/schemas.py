@@ -141,3 +141,77 @@ class SessionDetail(BaseModel):
     held_items: list[HeldRow] | None
     diverts: list[DivertRow] | None
     forensics: list[ForensicRow] | None
+
+
+class InsightQuery(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    level: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    mode: Mode | None = None
+    include_admin_test: bool = False
+
+
+class Overview(BaseModel):
+    students: int
+    sessions: int
+    sessions_per_student: float
+    active_today: int  # students with a session started in the last 24 hours
+
+
+class LevelOutcome(BaseModel):
+    level_id: str
+    level_name: str
+    sessions: int
+    obtained: int
+    not_obtained: int
+    rate: float
+
+
+class RuleCountRow(BaseModel):
+    rule_id: str
+    count: int
+
+
+class DecisionCountRow(BaseModel):
+    mode: Mode
+    decision: str
+    count: int
+
+
+class DefenseActivity(BaseModel):
+    top_rules: list[RuleCountRow]
+    decisions: list[DecisionCountRow]
+    divert_count: int
+
+
+class FamilyRow(BaseModel):
+    attack_family: str
+    count: int
+
+
+class PatternRow(BaseModel):
+    pattern_id: str
+    count: int
+
+
+class ItemAverage(BaseModel):
+    item: str
+    title: str
+    average: float
+    n: int
+
+
+class QuizPanel(BaseModel):
+    taken: int  # sessions whose latest attempt is done
+    open: int  # sessions whose latest attempt is assigned, in progress or awaiting regrade
+    average_percent: int | None
+    lowest_items: list[ItemAverage]
+
+
+class Insights(BaseModel):
+    overview: Overview
+    outcomes: list[LevelOutcome]
+    defense: DefenseActivity
+    attack_families: list[FamilyRow]
+    risky_patterns: list[PatternRow]
+    quiz: QuizPanel
