@@ -146,3 +146,59 @@ async def test_one_session_end_to_end_on_real_gemini() -> None:
         print(f"models: pro={cfg.gemini_pro_model_id} flash={cfg.gemini_flash_model_id}")
     finally:
         await client.aclose()
+
+
+GAMING_MAX = 3  # PRD §13.5: every gaming sample scores 3 or less out of 12
+GOOD_MIN = 9  # and every good sample scores 9 or more
+RUNS = int(os.environ.get("AEGIS_LIVE_RUNS", "1"))
+
+
+async def test_grader_hardening_samples_on_real_gemini() -> None:
+    """D-03: run the A-06 samples on the real grader model. Prints a table for the Progress log."""
+    import asyncio
+
+    from app.quiz.samples import load_samples
+
+    cfg = Settings(_env_file=("../.env", ".env"), AEGIS_AUTH_MODE="auth0", APP_ENV="test")  # type: ignore[call-arg]
+    assert cfg.gemini_pro_model_id, "pro model id missing in .env"
+    client = GeminiClient(
+        cfg.gemini_api_key.get_secret_value(), CountingBudget(), cfg.gemini_embedding_model_id
+    )
+    data = load_samples()
+    questions, key = data.scenario.questions, data.scenario.answer_key
+    gate = asyncio.Semaphore(4)
+
+    async def grade(sample, run: int) -> tuple[str, int, dict[str, int]]:  # type: ignore[no-untyped-def]
+        conv: dict[str, list[tuple[str, str]]] = {}
+        for t in sample.conversation:
+            conv.setdefault(t.question_id, []).append((t.role, t.text))
+        async with gate:
+            scores = await grade_free_response(
+                client,
+                model=cfg.gemini_pro_model_id,
+                questions=questions,
+                conversation=conv,
+                key=key,
+            )
+        return sample.id, sum(scores.values()), scores
+
+    try:
+        jobs = [grade(s, r) for s in data.samples for r in range(RUNS)]
+        results = await asyncio.gather(*jobs)
+    finally:
+        await client.aclose()
+
+    kind = {s.id: s.kind for s in data.samples}
+    print(f"\n=== GRADER HARDENING (model {cfg.gemini_pro_model_id}, runs per sample {RUNS}) ===")
+    bad: list[str] = []
+    for sid, total, scores in results:
+        is_good = kind[sid] == "good"
+        ok = total >= GOOD_MIN if is_good else total <= GAMING_MAX
+        print(f"{'OK  ' if ok else 'FAIL'} {sid:24s} {kind[sid]:20s} {total:2d}/12 {scores}")
+        if not ok:
+            bad.append(sid)
+    gaming = [r for r in results if kind[r[0]] != "good"]
+    good = [r for r in results if kind[r[0]] == "good"]
+    print(f"gaming within target: {sum(r[1] <= GAMING_MAX for r in gaming)}/{len(gaming)}")
+    print(f"good within target:   {sum(r[1] >= GOOD_MIN for r in good)}/{len(good)}")
+    assert not bad, f"outside target: {bad}"
