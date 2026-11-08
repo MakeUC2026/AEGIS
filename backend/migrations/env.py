@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-import os
 
 from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.db.engine import migration_url
+
 
 def _url() -> str:
-    url = os.environ.get("DATABASE_URL", "")
-    if not url:
-        raise RuntimeError("DATABASE_URL must be set to run migrations")
-    return url
+    # $DATABASE_URL if set, else the app settings (which read .env); see app.db.engine.
+    return migration_url()
 
 
 def _run(connection: Connection) -> None:

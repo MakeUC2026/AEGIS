@@ -88,3 +88,23 @@ def test_short_proxy_secret_refused_in_production() -> None:
             AUTH0_DOMAIN="t.example",
             AUTH0_AUDIENCE="a",
         )
+
+
+def test_migration_url_prefers_env_then_falls_back_to_dotenv_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `uv run alembic upgrade heads` must work with only a .env file (onboarding step).
+    from app.db import engine as db_engine
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://from-env/db")
+    assert db_engine.migration_url() == "postgresql+asyncpg://from-env/db"
+
+    monkeypatch.delenv("DATABASE_URL")
+    from_dotenv = Settings(_env_file=None, DATABASE_URL="postgresql+asyncpg://from-dotenv/db")
+    monkeypatch.setattr(db_engine, "get_settings", lambda: from_dotenv)
+    assert db_engine.migration_url() == "postgresql+asyncpg://from-dotenv/db"
+
+    empty = Settings(_env_file=None)
+    monkeypatch.setattr(db_engine, "get_settings", lambda: empty)
+    with pytest.raises(RuntimeError, match="DATABASE_URL"):
+        db_engine.migration_url()
