@@ -95,3 +95,18 @@ async def test_scripted_llm_raises_scripted_errors() -> None:
     llm = ScriptedLLM(json_answers=[TimeoutError("judge 8s")])
     with pytest.raises(TimeoutError):
         await llm.generate_json("m", "p", {})
+
+
+def test_fake_seams_fall_back_to_dotenv_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    # `uv run uvicorn ...` without exporting .env must still honour AEGIS_USE_FAKES (handoff step).
+    from app.config import Settings
+
+    monkeypatch.delenv("AEGIS_USE_FAKES", raising=False)
+    monkeypatch.delenv("AEGIS_FAKE_SCRIPT", raising=False)
+    from_dotenv = Settings(_env_file=None, AEGIS_USE_FAKES="firewall,read", AEGIS_FAKE_SCRIPT="dev")
+    monkeypatch.setattr(ports, "get_settings", lambda: from_dotenv)
+    ports.reset()
+    assert ports.fake_seams() == frozenset({"firewall", "read"})
+    assert isinstance(ports.get_firewall(), FakeFirewall)
+    assert ports.fake_script() == "dev"
+    ports.reset()

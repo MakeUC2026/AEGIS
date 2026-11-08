@@ -112,6 +112,8 @@ h3 {
 }
 
 .button:disabled,
+.btn-primary:disabled,
+.btn-alt:disabled,
 .btn-primary[aria-disabled="true"] {
   opacity: 0.45;
   cursor: not-allowed;
@@ -348,3 +350,46 @@ h3 {
     transition: none;
   }
 }
+
+/* --- Arena (M1 Phase C) --- */
+main.wide { max-width: 1280px; }
+.level-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin: 16px 0; }
+.level-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; display: grid; gap: 8px; }
+.level-card header { display: flex; gap: 8px; align-items: center; }
+.level-card h2 { margin: 0; font-size: 1.25rem; }
+.mode-chip { font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; border: 1px solid var(--border); padding: 2px 8px; border-radius: var(--radius); }
+.mode-chip[data-mode="off"] { color: var(--muted); }
+.mode-chip[data-mode="basic"] { color: var(--warn); border-color: var(--warn); }
+.mode-chip[data-mode="strict"] { color: var(--danger); border-color: var(--danger); }
+.tag-warn { color: var(--warn); font-size: 0.8rem; }
+.badge-won { color: var(--accent); font-weight: 600; }
+.error-line { color: var(--danger); }
+.rules ul { padding-left: 18px; }
+.chat-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 20px; }
+.chat-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.chat-head h1 { margin: 0; }
+.chat-actions { display: flex; gap: 8px; }
+.win-banner { background: var(--accent); color: var(--accent-fg); padding: 10px 14px; border-radius: var(--radius); font-family: var(--font-display); font-weight: 700; }
+.thread { list-style: none; padding: 0; display: grid; gap: 12px; }
+.bubble { margin: 0; padding: 10px 12px; border-radius: var(--radius); white-space: pre-wrap; overflow-wrap: anywhere; }
+.bubble.you { background: var(--panel-2); border: 1px solid var(--border); margin-left: 15%; }
+.bubble.bot { background: var(--panel); border: 1px solid var(--border); margin-right: 15%; }
+.bubble.bot[data-status="blocked"], .bubble.bot[data-status="human_denied"] { border-color: var(--danger); color: var(--danger); }
+.bubble.bot[data-status="awaiting_review"] { border-color: var(--warn); color: var(--warn); }
+.bubble.bot[data-status="not_sent"] { border-style: dashed; color: var(--muted); }
+.link-btn { background: none; border: 0; color: var(--accent); cursor: pointer; margin-left: 10px; font: inherit; text-decoration: underline; }
+.composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.composer textarea { min-height: 72px; resize: vertical; background: var(--input); color: var(--fg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; font: inherit; }
+.chat-side { display: grid; gap: 16px; align-content: start; }
+.chat-side section { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+.chat-side h2 { margin: 0 0 8px; font-size: 1rem; }
+.effect { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; }
+.effect-head { margin: 0; color: var(--muted); font-size: 0.85rem; }
+.effect pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; font-size: 0.85rem; }
+.feed { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: 0.85rem; }
+.feed li[data-decision="deny"], .feed li[data-decision="human_deny"] { color: var(--danger); }
+.feed li[data-decision="review"] { color: var(--warn); }
+.feed li[data-decision="divert"] { color: var(--info); }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+@media (max-width: 860px) { .chat-layout { grid-template-columns: 1fr; } .bubble.you, .bubble.bot { margin: 0; } }
