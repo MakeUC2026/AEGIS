@@ -146,6 +146,14 @@ def _resolve_path(raw: str) -> ResolvedPath:
     return ResolvedPath(raw, absolute, inside_workspace=False)
 
 
+def resolve_workspace_path(raw: str) -> ResolvedPath | None:
+    """Public form of the B-03 path resolution, for the mock shell. None means rejected."""
+    try:
+        return _resolve_path(unicodedata.normalize("NFKC", raw))
+    except _Reject:
+        return None
+
+
 def args_hash(tool: str, args: Mapping[str, Any]) -> str:
     canonical = json.dumps(
         {"tool": tool, "args": dict(args)},
