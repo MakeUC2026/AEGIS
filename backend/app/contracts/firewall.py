@@ -101,7 +101,9 @@ class FeedItem(Contract):
     rule_ids: list[str]
     score_band: ScoreBand
     # Gap fill (M1 §3.1): what the Gatekeeper would have done, set only in Off mode.
-    shadow_decision: Literal["allow", "deny", "review"] | None = None
+    # Off shadows all four actions (PRD D-02, §5.2), so divert is valid here; human_deny is
+    # not, because nothing is ever held in Off. (M2 DM1-1 contract review, pre-G1.)
+    shadow_decision: Literal["allow", "deny", "review", "divert"] | None = None
 
 
 class PlayerView(Contract):
