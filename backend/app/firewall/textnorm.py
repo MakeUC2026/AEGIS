@@ -17,6 +17,7 @@ import re
 import unicodedata
 from collections.abc import Mapping
 from types import MappingProxyType
+from typing import Any
 
 _WHITESPACE = re.compile(r"\s+")
 _MAX_PASSES = 4  # the folds reach a fixed point in at most a couple of passes
@@ -71,6 +72,22 @@ def normalize(text: str, invisible_as_space: bool = False) -> str:
             return current
         current = following
     return current
+
+
+REPLACEMENT_CHAR = "\ufffd"
+
+
+def storable(value: Any) -> Any:
+    """Text Postgres can store: NUL becomes U+FFFD, lone surrogates become '?'. Recursive
+    over lists and dicts (M2-DD-36). Applied wherever untrusted text is written."""
+    if isinstance(value, str):
+        cleaned = value.replace("\x00", REPLACEMENT_CHAR)
+        return cleaned.encode("utf-8", "replace").decode("utf-8")
+    if isinstance(value, list):
+        return [storable(v) for v in value]
+    if isinstance(value, dict):
+        return {storable(k): storable(v) for k, v in value.items()}
+    return value
 
 
 def skeleton(text: str) -> str:

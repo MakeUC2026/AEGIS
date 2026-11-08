@@ -2,20 +2,26 @@
 
 `execute_tool` runs on the caller's transaction:
 1. lock the session's mock state row (calls on one session queue up);
-2. if the `call_id` is already recorded, replay its stored result: it never executes twice;
-3. otherwise run the pure tool, save any changed state, and record the call.
+2. a closed session runs nothing (`SessionClosed`; the session row is share-locked, so a
+   concurrent close waits for this transaction or wins before it starts);
+3. if the `call_id` is already recorded for the same tool and arguments, replay its stored
+   result: it never executes twice. A recorded call with different content (a retry where
+   the model proposed something else) is not replayed: the new call runs under an ID
+   derived from its own content (M2-DD-36);
+4. otherwise run the pure tool, save any changed state, and record the call.
 A failure later in the turn rolls back the state change, the record and the event together.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from app.contracts.firewall import SessionClosed
 from app.firewall.canonical import CanonicalCall
 from app.firewall.mock_tools import MockState, run_tool, visible_mail
 
@@ -27,8 +33,9 @@ _READ_STATE = (
     "SELECT documents, emails, db_rows, filesystem, attacker_mailbox, allowlist_domains"
     " FROM fw_mock_state WHERE fw_session_id = :sid"
 )
+_SESSION_STATUS = "SELECT status FROM fw_sessions WHERE fw_session_id = :sid FOR SHARE"
 _RECORDED = (
-    "SELECT tool, result, canonical_args FROM fw_tool_calls"
+    "SELECT tool, args_hash, result, canonical_args FROM fw_tool_calls"
     " WHERE fw_session_id = :sid AND call_id = :cid"
 )
 _SAVE_STATE = (
@@ -48,6 +55,7 @@ class Executed:
     result: str
     visible_content: str | None
     replayed: bool
+    call_id: str = ""  # the ID the call ran (or replayed) under
 
 
 def _json(value: Any) -> Any:
@@ -78,17 +86,34 @@ def _replayed_visibility(state: MockState, tool: str, args: dict[str, Any]) -> s
     return visible_mail(state, recipients, str(args.get("subject", "")), str(args.get("body", "")))
 
 
+def derived_call_id(call: CanonicalCall) -> str:
+    return f"{call.call_id}-{call.args_hash[-12:]}"
+
+
+async def _recorded(conn: AsyncConnection, fw_session_id: str, call_id: str) -> Any:
+    row = (await conn.execute(text(_RECORDED), {"sid": fw_session_id, "cid": call_id})).first()
+    return None if row is None else row._mapping
+
+
 async def execute_tool(
     conn: AsyncConnection, fw_session_id: str, message_id: str, call: CanonicalCall
 ) -> Executed:
+    status = (
+        await conn.execute(text(_SESSION_STATUS), {"sid": fw_session_id})
+    ).scalar_one_or_none()
+    if status is None:
+        raise LookupError(f"no session {fw_session_id}")
+    if status == "closed":
+        raise SessionClosed("session is closed; no tool runs")
     state = await load_state(conn, fw_session_id, lock=True)
-    recorded = (
-        await conn.execute(text(_RECORDED), {"sid": fw_session_id, "cid": call.call_id})
-    ).first()
+    recorded = await _recorded(conn, fw_session_id, call.call_id)
+    if recorded is not None and recorded["args_hash"] != call.args_hash:
+        call = replace(call, call_id=derived_call_id(call))
+        recorded = await _recorded(conn, fw_session_id, call.call_id)
     if recorded is not None:
-        r = recorded._mapping
-        args = _json(r["canonical_args"]) or {}
-        return Executed(r["result"] or "", _replayed_visibility(state, r["tool"], args), True)
+        args = _json(recorded["canonical_args"]) or {}
+        visible = _replayed_visibility(state, recorded["tool"], args)
+        return Executed(recorded["result"] or "", visible, True, call.call_id)
     outcome = run_tool(state, call)
     if outcome.changed:
         new = outcome.state
@@ -113,4 +138,4 @@ async def execute_tool(
             "result": outcome.result,
         },
     )
-    return Executed(outcome.result, outcome.visible_content, False)
+    return Executed(outcome.result, outcome.visible_content, False, call.call_id)

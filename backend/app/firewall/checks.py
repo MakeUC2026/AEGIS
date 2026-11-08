@@ -26,6 +26,7 @@ from app.firewall.leak import LeakMatch, scan, scan_cumulative
 from app.firewall.limits import check_args, check_text, cumulative_exceeded
 from app.firewall.rules import Evaluation, RuleSubject, evaluate
 from app.firewall.sentinel_l1 import Layer1Input, layer1
+from app.firewall.textnorm import storable
 from app.llm.base import ToolCall
 
 
@@ -92,7 +93,8 @@ def _invalid_call(ctx: TurnContext, call: ToolCall, call_id: str, now: datetime)
     gate = _gate(
         ctx, Evaluation((), (), 0.0), Layer1Input(raw_text="", now=now), canonical_error=True
     )
-    return Checked("tool_call_check", "bot_output", gate, "", tool=call.name, call_id=call_id)
+    tool = storable(call.name)
+    return Checked("tool_call_check", "bot_output", gate, "", tool=tool, call_id=call_id)
 
 
 def check_tool_call(
@@ -101,6 +103,7 @@ def check_tool_call(
     call_id: str,
     tool_results: Sequence[str],
     now: datetime,
+    seen_before: Sequence[str] = (),
 ) -> Checked:
     canonical = canonicalize(call.name, call.arguments, ctx.tools, call_id)
     if isinstance(canonical, CanonicalError):
@@ -111,7 +114,12 @@ def check_tool_call(
         if isinstance(canonical, CanonicalError):
             return _invalid_call(ctx, call, call_id, now)
     args_text = " ".join(str(v) for v in canonical.args.values())
-    leak = scan(args_text, ctx.secret)
+    # Strict (and Off, for the shadow) scan tool arguments over everything already visible,
+    # so a secret split across several visible tool effects is caught (M2-DD-37).
+    if ctx.mode == "basic":
+        leak = scan(args_text, ctx.secret)
+    else:
+        leak = scan_cumulative(seen_before, args_text, ctx.secret)
     rules = _evaluate(ctx, RuleSubject(applies_on="bot_tool_call", text=args_text, call=canonical))
     signals = Layer1Input(
         raw_text=args_text,
@@ -123,14 +131,14 @@ def check_tool_call(
     )
     gate = _gate(ctx, rules, signals, leak=leak, limit_exceeded=limited.action != "ok")
     return Checked(
-        "tool_call_check", "bot_output", gate, args_text, call.name, call_id, canonical, leak
+        "tool_call_check", "bot_output", gate, args_text, canonical.tool, call_id, canonical, leak
     )
 
 
 def check_output(
     ctx: TurnContext, reply: str, seen_before: Sequence[str], now: datetime
 ) -> Checked:
-    limited = check_text("reply", reply, ctx.mode)
+    limited = check_text("reply", storable(reply), ctx.mode)
     if ctx.mode == "basic":
         leak = scan(limited.text, ctx.secret)
     else:  # Strict enforces the cumulative scan; Off computes it for the shadow decision

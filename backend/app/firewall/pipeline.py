@@ -29,6 +29,7 @@ from app.firewall.context import TurnContext, load_context
 from app.firewall.events import EventRow, SourceTrust, insert_event, row_from_decision
 from app.firewall.leak import echo_excluded, scan_cumulative
 from app.firewall.limits import check_text
+from app.firewall.textnorm import storable
 from app.firewall.tool_exec import execute_tool
 from app.firewall.views import turn_result
 from app.llm.base import ChatMessage, ChatModel, ToolCall
@@ -96,19 +97,24 @@ def _tool_hook(engine: AsyncEngine, turn: _Turn, clock: Clock) -> Callable[..., 
     async def on_tool_call(call: ToolCall, round_index: int) -> ToolStep:
         call_id = f"{turn.message_id}-r{round_index}-c{turn.calls_made}"
         turn.calls_made += 1
-        checked = check_tool_call(turn.ctx, call, call_id, turn.tool_results, clock())
+        seen = (*turn.ctx.visible_output, *turn.visible_new)
+        checked = check_tool_call(turn.ctx, call, call_id, turn.tool_results, clock(), seen)
         turn.checks.append(checked)
+        tool = storable(call.name)
         if not checked.allowed or checked.call is None:
             turn.effects.append(
-                ToolEffect(call_id=call_id, tool=call.name, state="blocked", visible_content=None)
+                ToolEffect(call_id=call_id, tool=tool, state="blocked", visible_content=None)
             )
             turn.later_events.append(_event(turn, checked, "not_executed"))
             return ToolStep.stop()
         async with engine.begin() as conn:
-            await insert_event(conn, _event(turn, checked, "executed"))
             executed = await execute_tool(
                 conn, turn.ctx.fw_session_id, turn.message_id, checked.call
             )
+            if executed.call_id != call_id:  # a retry whose call differs from the recorded one
+                checked = replace(checked, call_id=executed.call_id)
+                call_id = executed.call_id
+            await insert_event(conn, _event(turn, checked, "executed"))
             await insert_event(
                 conn, _event(turn, checked, "executed", "tool_executed", "tool_result")
             )
@@ -116,7 +122,7 @@ def _tool_hook(engine: AsyncEngine, turn: _Turn, clock: Clock) -> Callable[..., 
         turn.effects.append(
             ToolEffect(
                 call_id=call_id,
-                tool=call.name,
+                tool=tool,
                 state="executed",
                 visible_content=executed.visible_content,
             )
@@ -155,8 +161,13 @@ def _rows(turn: _Turn, message: str, bot: BotTurn | None, replied: bool) -> list
     ]
     for msg in bot.new_messages if bot else ():
         rows.append({**base, **_row_for(msg, turn, replied)})
-    return [
-        {**r, "seq": turn.ctx.next_seq + i, "payload": json.dumps(r["payload"])}
+    return [  # model text can hold NUL or lone surrogates; Postgres stores neither
+        {
+            **r,
+            "seq": turn.ctx.next_seq + i,
+            "content": storable(r["content"]),
+            "payload": json.dumps(storable(r["payload"])),
+        }
         for i, r in enumerate(rows)
     ]
 
@@ -269,6 +280,7 @@ async def run_message(
     clock: Clock = _utcnow,
 ) -> TurnResult:
     """C2 `send_message` core. `client` is used only by Divert's trace-back (Phase C)."""
+    message = storable(message)  # NUL and lone surrogates cannot be stored (M2-DD-36)
     claim = await claim_message(engine, owner_ref, fw_session_id, message_id, message)
     if claim.stored is not None:
         return claim.stored

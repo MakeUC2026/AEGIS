@@ -30,6 +30,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
 from app.contracts.firewall import ToolDef
+from app.firewall.textnorm import REPLACEMENT_CHAR, storable
 
 WORKSPACE_ROOT = "/workspace"
 RECIPIENT_ARGS: Mapping[str, tuple[str, ...]] = MappingProxyType({"send_email": ("to",)})
@@ -80,7 +81,7 @@ class _Reject(Exception):
 
 def _nfkc(value: Any) -> Any:
     if isinstance(value, str):
-        return unicodedata.normalize("NFKC", value)
+        return unicodedata.normalize("NFKC", storable(value))
     if isinstance(value, list):
         return [_nfkc(v) for v in value]
     if isinstance(value, dict):
@@ -134,7 +135,10 @@ def _resolve_path(raw: str) -> ResolvedPath:
     decoded = _url_decode(raw)
     if _STILL_ENCODED.search(decoded):
         raise _Reject("bad_path", "path is still URL-encoded after decoding")
-    if any(unicodedata.category(ch) in ("Cc", "Cf") for ch in decoded):
+    # U+FFFD stands for a NUL or lone surrogate already replaced by `storable`
+    if REPLACEMENT_CHAR in decoded or any(
+        unicodedata.category(ch) in ("Cc", "Cf") for ch in decoded
+    ):
         raise _Reject("bad_path", "control or format character in path")
     slashed = decoded.replace("\\", "/")
     if slashed.startswith("/"):
