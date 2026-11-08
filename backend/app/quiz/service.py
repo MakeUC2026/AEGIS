@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
@@ -17,6 +18,7 @@ from app.contracts.arena import ArenaServicePort, ArenaSession
 from app.contracts.firewall_read import FirewallReadPort
 from app.contracts.users import CurrentUser
 from app.quiz import repo
+from app.quiz.classmate import TurnRecord, conversation_state, is_done, next_follow_up
 from app.quiz.context import build_context
 from app.quiz.errors import BadInput, Conflict, NotAllowed, QuizMissing, SessionMissing
 from app.quiz.generator import generate_quiz
@@ -32,6 +34,7 @@ from app.quiz.schemas import (
     MineList,
     MineRow,
     QuizView,
+    TurnOut,
 )
 
 
@@ -279,4 +282,70 @@ async def answer_mcq(
         correct=result.correct,
         explanation=result.explanation,
         already_answered=result.already_answered,
+    )
+
+
+async def post_turn(
+    deps: QuizDeps, user: CurrentUser, quiz_id: str, question_id: str, body: str
+) -> TurnOut:
+    """A student's message on a free-response prompt; returns the classmate's follow-up."""
+    body = body.strip()
+    if not body:
+        raise BadInput("write something first")
+    async with deps.engine.connect() as conn:
+        row = await _owned_open_quiz(conn, user, quiz_id)
+        qid = uuid.UUID(row.id)
+        found = await repo.free_response_of(conn, qid, question_id)
+        if found is None:
+            raise QuizMissing("question not found")
+        kind, prompt, max_follow_ups = found
+        if kind != "free_response":
+            raise BadInput("this is a multiple-choice question; use the answer route")
+        turns = await repo.question_turns(conn, qid, question_id)
+    state = conversation_state(turns, max_follow_ups, datetime.now(UTC))
+    if state.closed_reason is not None:
+        return TurnOut(
+            question_id=question_id,
+            accepted=False,
+            reply=None,
+            follow_ups_used=state.follow_ups_used,
+            closed=True,
+            reason=state.closed_reason,
+        )
+    session = await deps.arena.get_session(row.session_id)
+    if session is None:
+        raise SessionMissing("session not found")
+    clean = await deps.read.redact_for_session(session.fw_session_id, body)
+    new: list[tuple[str, str]] = [] if turns else [("classmate", prompt)]
+    new.append(("student", clean))
+    reply: str | None = None
+    closing: str | None = None
+    if is_done(clean):
+        closing = "done"
+    elif state.follow_ups_used >= max_follow_ups:
+        closing = "follow_up_limit"
+    else:
+        reply = await next_follow_up(
+            deps.runtime.llm,
+            model=deps.runtime.flash_model,
+            question=prompt,
+            turns=turns or [TurnRecord(1, "classmate", prompt, datetime.now(UTC))],
+            new_text=clean,
+        )
+        reply = await deps.read.redact_for_session(session.fw_session_id, reply)
+        new.append(("classmate", reply))
+    try:
+        async with deps.engine.begin() as conn:
+            first = (turns[-1].seq + 1) if turns else 1
+            await repo.add_turns(conn, qid, question_id, first, new)
+    except IntegrityError:
+        raise Conflict("another message was sent at the same time; try again") from None
+    used = state.follow_ups_used + (1 if reply else 0)
+    return TurnOut(
+        question_id=question_id,
+        accepted=True,
+        reply=reply,
+        follow_ups_used=used,
+        closed=closing is not None,
+        reason=closing,  # type: ignore[arg-type]
     )

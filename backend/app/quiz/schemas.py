@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field, StrictInt
+from pydantic import Field, StrictInt, StringConstraints
 
 from app.contracts.common import Contract
 from app.quiz.models import PublicQuiz
@@ -87,3 +87,22 @@ class AnswerOut(Contract):
     correct: bool
     explanation: str
     already_answered: bool
+
+
+TURN_MAX_CHARS = 2000
+
+
+class TurnIn(Contract):
+    question_id: str = Field(pattern=r"^q[0-9]{1,2}$")
+    text: Annotated[str, StringConstraints(max_length=TURN_MAX_CHARS)]
+
+
+class TurnOut(Contract):
+    """`accepted` is False when the prompt was already closed and the text was not stored."""
+
+    question_id: str
+    accepted: bool
+    reply: str | None
+    follow_ups_used: int
+    closed: bool
+    reason: Literal["done", "follow_up_limit", "timeout"] | None

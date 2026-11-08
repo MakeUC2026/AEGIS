@@ -28,6 +28,8 @@ from app.quiz.schemas import (
     MineList,
     QuizView,
     StartIn,
+    TurnIn,
+    TurnOut,
 )
 from app.quiz.service import QuizDeps
 
@@ -102,6 +104,18 @@ async def answer(
     try:
         return await service.answer_mcq(
             _deps(engine, runtime), user, quiz_id, question_id, body.index
+        )
+    except _HANDLED as exc:
+        raise _http(exc) from None
+
+
+@router.post("/quizzes/{quiz_id}/turns")
+async def post_turn(
+    quiz_id: PathId, body: TurnIn, user: Caller, engine: Engine, runtime: Runtime
+) -> TurnOut:
+    try:
+        return await service.post_turn(
+            _deps(engine, runtime), user, quiz_id, body.question_id, body.text
         )
     except _HANDLED as exc:
         raise _http(exc) from None

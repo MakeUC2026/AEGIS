@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from app.quiz.classmate import TurnRecord
 from app.quiz.models import (
     AnswerKey,
     FreeResponseQuestion,
@@ -340,3 +341,57 @@ async def record_choice(conn: AsyncConnection, quiz_id: uuid.UUID, qid: str, ind
         {"q": quiz_id, "id": qid, "i": index},
     )
     return done.rowcount == 1
+
+
+async def free_response_of(
+    conn: AsyncConnection, quiz_id: uuid.UUID, question_id: str
+) -> tuple[str, str, int] | None:
+    """`(type, prompt, max_follow_ups)` of any question, or None when it does not exist."""
+    r = (
+        await conn.execute(
+            text(
+                "SELECT type, prompt, COALESCE(max_follow_ups, 0) FROM quiz_questions"
+                " WHERE quiz_id = :q AND question_id = :id"
+            ),
+            {"q": quiz_id, "id": question_id},
+        )
+    ).first()
+    return (r[0], r[1], r[2]) if r else None
+
+
+async def question_turns(
+    conn: AsyncConnection, quiz_id: uuid.UUID, question_id: str
+) -> list[TurnRecord]:
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT seq, role, text, created_at FROM quiz_turns"
+                " WHERE quiz_id = :q AND question_id = :id ORDER BY seq"
+            ),
+            {"q": quiz_id, "id": question_id},
+        )
+    ).all()
+    return [TurnRecord(r[0], r[1], r[2], r[3]) for r in rows]
+
+
+async def add_turns(
+    conn: AsyncConnection,
+    quiz_id: uuid.UUID,
+    question_id: str,
+    first_seq: int,
+    new: list[tuple[str, str]],
+) -> None:
+    for offset, (role, body) in enumerate(new):
+        await conn.execute(
+            text(
+                "INSERT INTO quiz_turns (quiz_id, question_id, seq, role, text)"
+                " VALUES (:q, :id, :seq, :role, :text)"
+            ),
+            {
+                "q": quiz_id,
+                "id": question_id,
+                "seq": first_seq + offset,
+                "role": role,
+                "text": body,
+            },
+        )
