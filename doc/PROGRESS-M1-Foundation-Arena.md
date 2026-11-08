@@ -69,17 +69,17 @@ All shapes are Pydantic v2 models in `backend/app/contracts/` (PRD D-16, §14). 
 
 | Gate | Hour | Whole-team exit criteria (PRD) | What each machine must have merged or shown |
 | --- | --- | --- | --- |
-| G0 | H3 | Stack deployed to Vercel and Railway and running locally; Auth0 roles work; contracts and fakes merged | M1: bootstrap PR merged to `main`. M2, M3, M4: rebased on it, Track A logic unit-tested |
+| G0 | H3 | Stack deployed to Vercel and Railway and running locally; Auth0 roles work; contracts and fakes merged | M1: bootstrap PR merged to `master`. M2, M3, M4: rebased on it, Track A logic unit-tested |
 | G1 | H8 | Basic denies a fixture attack with a logged score; contracts frozen | M2: `0003` migration and rule seed merged, Basic deny demo. M3: `0004` migration merged. M1: arena on `FakeFirewall` end to end. M4: classroom API on fakes |
 | G2 | H14 | MVP AFF: all four actions, Review loop, Divert, Strict with risky history. If any MVP test fails, cut all stretch items | M2 and M3: Strict works with real C7 on a shared `integration` branch. M1, M4: UI flows complete on fakes |
 | G3 | H17 | Forensics and drafts working; dashboard and quiz complete on fakes. No interface changes after this | Every machine's **Exit criteria** (its own §7) are checked. The final merge window opens |
 | G4 | H21 | End-to-end demo script passes twice in a row on real models | Joint, led by M1 |
 | — | H21–H24 | Rehearse, backup video, Devpost | Joint |
 
-### 0.6 Merge protocol to `main` (the master branch)
+### 0.6 Merge protocol to `master`
 
-1. **Early seam merges** may go to `main` before exit criteria are met, but only for: the M1 Gate 0 bootstrap, a machine's own migration file and seed, and contract-change PRs approved by all four. CI must be green.
-2. **Final merge.** Open a PR from your branch to `main` only when every box in your §7 Exit criteria is `[x]`, CI is green and the branch is rebased on the latest `main`. CI means `ruff check`, `ruff format --check`, `pytest`, `tsc --noEmit` (strict), `next build`, `gitleaks detect`, and `alembic upgrade heads` on an empty TimescaleDB with pgvector.
+1. **Early seam merges** may go to `master` before exit criteria are met, but only for: the M1 Gate 0 bootstrap, a machine's own migration file and seed, and contract-change PRs approved by all four. CI must be green.
+2. **Final merge.** Open a PR from your branch to `master` only when every box in your §7 Exit criteria is `[x]`, CI is green and the branch is rebased on the latest `master`. CI means `ruff check`, `ruff format --check`, `pytest`, `tsc --noEmit` (strict), `next build`, `gitleaks detect`, and `alembic upgrade heads` on an empty TimescaleDB with pgvector.
 3. **Order at G3:** M1, then M2, then M3, then M4. Rebase after each one lands. Then M1 empties `AEGIS_USE_FAKES` and runs the integration suite (M1 §8).
 4. After a final merge, fixes go in small PRs named `fix/<machine>-<topic>`.
 5. Commit messages use Conventional Commits with the machine as scope, for example `feat(m2): gatekeeper bands`.
@@ -175,7 +175,7 @@ PRD §14 names these types but does not define them. M1 defines them in the Gate
 
 ### G0 bootstrap checkpoint: the point from which M2, M3 and M4 can start their main work
 
-M2, M3 and M4 can do their **Phase A pure-logic work right now**, with no dependency on M1. They need the checkpoint below before **their Phase B**, because that's where they import contracts, fakes, auth, the DB layer and the frontend shell. The checkpoint is reached when everything below is merged to `main` and announced. **The Arena itself (Phases B–D) is not part of it**: the others use `FakeFirewall`, `FakeArenaService` and the other fakes instead.
+M2, M3 and M4 can do their **Phase A pure-logic work right now**, with no dependency on M1. They need the checkpoint below before **their Phase B**, because that's where they import contracts, fakes, auth, the DB layer and the frontend shell. The checkpoint is reached when everything below is merged to `master` and announced. **The Arena itself (Phases B–D) is not part of it**: the others use `FakeFirewall`, `FakeArenaService` and the other fakes instead.
 
 | # | Item | Needed by | Status |
 | --- | --- | --- | --- |
@@ -186,7 +186,7 @@ M2, M3 and M4 can do their **Phase A pure-logic work right now**, with no depend
 | CP-5 | Frontend skeleton: Next.js and TS strict, `lib/api.ts` proxy, `lib/auth0.ts` plus dev login, role-aware shell nav, theme, placeholder pages for `admin/`, `classroom/`, `quiz/` (A-10) | M3, M4 (UI work) | [x] Next 16.4.5 with TS strict. 15 of 15 vitest pass; `tsc`, eslint and `next build` are clean. Checked in Playwright on the live stack (FastAPI on the dev DB plus `next dev`): signed-out landing; dev sign-in; student tabs Arena, My sessions and Quizzes; teacher tab Classroom only; dual-role tabs Arena, Classroom and Firewall; placeholder pages; `/api/me` signed out returns 401; a `..` path returns 400; CSP and `X-Frame-Options` headers present; no console errors. Screenshot in `.playwright-mcp/` (git-ignored) |
 | CP-6 | Seed fixtures `fixtures/attacks/`, `fixtures/benign/`, with the schema in `contracts/fixtures.py` (A-13) | M2, M3 | [x] |
 | CP-7 | `Dockerfile`, `.env.example`, CI workflow (ruff, pytest with TimescaleDB, alembic heads, tsc, build, gitleaks) (A-11, A-12) | all (green CI is the merge rule, §0.6) | [x] backend side, verified locally. The CI frontend job turns on once CP-5 adds `frontend/package.json`. The first real CI run happens at CP-8 |
-| CP-8 | First commit and push to `origin/main`, then announce "G0 bootstrap merged, rebase now" to M2, M3, M4 (A-17). **Needs the user's OK to push** | all | [!] User approved. Committed locally as `d1b5e6f` (127 files, gitleaks clean on the staged set). **Push blocked: this machine has no GitHub credentials** (no `gh`, no credential helper). The user needs to push, or set up auth |
+| CP-8 | First commit and push to `origin/master`, then announce "G0 bootstrap merged, rebase now" to M2, M3, M4 (A-17). **Needs the user's OK to push** | all | [!] User approved. Committed locally as `d1b5e6f` (127 files, gitleaks clean on the staged set). **Push blocked: this machine has no GitHub credentials** (no `gh`, no credential helper). The user needs to push, or set up auth |
 
 Not part of the checkpoint (they can follow later without blocking anyone): Auth0 tenant (A-07), deploys (A-14), Grok smoke test (A-15), model IDs (A-16), and all of Phases B–D.
 
@@ -323,7 +323,7 @@ M1 owns no PRD §16.2 E-case outright. M1 co-owns **E-54** (the recap part) and 
 ## 8. Integration duties (H17–H21, M1 leads)
 
 - [ ] INT-1 Merge in order M1, M2, M3, M4 (§0.6). Add `0099_merge_heads`. Empty `AEGIS_USE_FAKES` on all environments.
-- [ ] INT-2 Run every PRD §16.2 E-case (E-01 to E-60, all four machines' tests) on `main` with fakes off. Record pass or fail per E-ID in the Progress log.
+- [ ] INT-2 Run every PRD §16.2 E-case (E-01 to E-60, all four machines' tests) on `master` with fakes off. Record pass or fail per E-ID in the Progress log.
 - [ ] INT-3 Run the PRD §6.5 demo script end to end on real Grok and Gemini on the deployed stack, steps 1–6:
   1. Off: poisoned document emails the secret, win banner, feed shows "would have denied (R-003, B-01)".
   2. Basic direct: R-003 denies the email.
@@ -396,6 +396,7 @@ M1 owns no PRD §16.2 E-case outright. M1 co-owns **E-54** (the recap part) and 
 | H0+ | G0 (in progress) | **CP-6 done:** seed fixtures (A-13). Test written first and failed (no files), then 104 of 104 passed | — | CP-7: Dockerfile, `.env.example`, CI, Dependabot, gitleaks config |
 | H0+ | G0 (in progress) | **CP-7 backend side done:** Dockerfile and entrypoint (image built and smoke-tested: healthz 200, unauthenticated `/api` 401, non-root), `.env.example`, `railway.json`, CI workflow, Dependabot. pip-audit clean. Gitleaks: only the ignored `.env` is flagged | GitHub Actions run not yet observed (needs the CP-8 push) | (see next row) |
 | H0+ | G0 (in progress) | **CP-5 in progress:** Next.js 16.4.5 scaffold (boilerplate removed), Auth0 v4 via `proxy.ts` (the Next 16 rename of middleware, confirmed in the bundled docs and context7), server-only session and token helpers, `/api` forwarding route, dev login and logout routes. Frontend unit tests written first and failed, then 15 of 15 passed | `cacheComponents` from the template will be turned off (DD-16) | Finish CP-5 (pages, layout, theme, headers), then typecheck, build and Playwright, then ask to push (CP-8) |
-| H0+ | G0 (in progress) | **CP-5 done.** Playwright found two real bugs, both fixed and covered: CSP blocked the dev-login redirect (DD-17), and an escaped PEM broke dev tokens (DD-18, new backend test). Backend 105 of 105, frontend 15 of 15; typecheck, lint and build clean. **CP-1 to CP-7 are all done** | CP-8 needs the user's OK to commit and push to `origin/main` | Ask the user, then CP-8. Then Arena Phase B |
+| H0+ | G0 (in progress) | **CP-5 done.** Playwright found two real bugs, both fixed and covered: CSP blocked the dev-login redirect (DD-17), and an escaped PEM broke dev tokens (DD-18, new backend test). Backend 105 of 105, frontend 15 of 15; typecheck, lint and build clean. **CP-1 to CP-7 are all done** | CP-8 needs the user's OK to commit and push to `origin/master` | Ask the user, then CP-8. Then Arena Phase B |
 | H0+ | G0 (in progress) | **Sign-in UI and theme restyled** to the user's mock (DD-20): `components/auth/` (`AuthStage`, `AuthPanel`, `panel-copy`), new tokens and fonts, landing and dev-login pages on the stage, shell logo. Test written first and failed, then 17 of 17 passed; typecheck, lint and build clean. Checked in Playwright at desktop and phone width, in both Sign in and Sign up modes | Restyling Auth0's hosted login page needs tenant access (user) | CP-8 push after the user's OK |
-| H0+ | G0 (CP-8) | User approved the commit and push; the user removed the mock file. First commit `d1b5e6f` on `main` (127 files). Gitleaks on staged files: no leaks | **Push failed: no GitHub credentials on this machine.** CI not yet run | User pushes or sets up GitHub auth; then watch CI and announce G0 to M2, M3, M4. Arena Phase B can start locally in parallel | CP-5: frontend skeleton (Next.js 16, TS strict, `lib/api.ts` proxy, Auth0 v4 plus dev login, shell nav, theme, placeholder pages), frontend Dockerfile, `vercel.json` |
+| H0+ | G0 (CP-8) | User approved the commit and push; the user removed the mock file. First commit `d1b5e6f` on `master` (127 files). Gitleaks on staged files: no leaks | **Push failed: no GitHub credentials on this machine.** CI not yet run | User pushes or sets up GitHub auth; then watch CI and announce G0 to M2, M3, M4. Arena Phase B can start locally in parallel | CP-5: frontend skeleton (Next.js 16, TS strict, `lib/api.ts` proxy, Auth0 v4 plus dev login, shell nav, theme, placeholder pages), frontend Dockerfile, `vercel.json` |
+| H0+ | G0 (CP-8) | The user's `main` push landed (`e4dd51d`), but the repo's real default branch is `master` (one unrelated `first commit` with `README.md`). Merged our history into `master` with `--allow-unrelated-histories` (`a2288e9`: README kept, no history rewritten, no force push). All four docs, the master prompt and CI now target `master` | Push to `master` returns 403: the token signs in as `lehoangbaoduy` but has no write access to `MakeUC2026/AEGIS` | User pushes `master`, or provides an org-scoped token with Contents and Workflows write access; then watch CI and announce G0 |

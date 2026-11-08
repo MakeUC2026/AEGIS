@@ -69,17 +69,17 @@ All shapes are Pydantic v2 models in `backend/app/contracts/` (PRD D-16, §14). 
 
 | Gate | Hour | Whole-team exit criteria (PRD) | What each machine must have merged or shown |
 | --- | --- | --- | --- |
-| G0 | H3 | Stack deployed to Vercel and Railway and running locally; Auth0 roles work; contracts and fakes merged | M1: bootstrap PR merged to `main`. M2, M3, M4: rebased on it, Track A logic unit-tested |
+| G0 | H3 | Stack deployed to Vercel and Railway and running locally; Auth0 roles work; contracts and fakes merged | M1: bootstrap PR merged to `master`. M2, M3, M4: rebased on it, Track A logic unit-tested |
 | G1 | H8 | Basic denies a fixture attack with a logged score; contracts frozen | M2: `0003` migration and rule seed merged, Basic deny demo. M3: `0004` migration merged. M1: arena on `FakeFirewall` end to end. M4: classroom API on fakes |
 | G2 | H14 | MVP AFF: all four actions, Review loop, Divert, Strict with risky history. If any MVP test fails, cut all stretch items | M2 and M3: Strict works with real C7 on a shared `integration` branch. M1, M4: UI flows complete on fakes |
 | G3 | H17 | Forensics and drafts working; dashboard and quiz complete on fakes. No interface changes after this | Every machine's **Exit criteria** (its own §7) are checked. The final merge window opens |
 | G4 | H21 | End-to-end demo script passes twice in a row on real models | Joint, led by M1 |
 | — | H21–H24 | Rehearse, backup video, Devpost | Joint |
 
-### 0.6 Merge protocol to `main` (the master branch)
+### 0.6 Merge protocol to `master`
 
-1. **Early seam merges** may go to `main` before exit criteria are met, but only for: the M1 Gate 0 bootstrap, a machine's own migration file and seed, and contract-change PRs approved by all four. CI must be green.
-2. **Final merge.** Open a PR from your branch to `main` only when every box in your §7 Exit criteria is `[x]`, CI is green and the branch is rebased on the latest `main`. CI means `ruff check`, `ruff format --check`, `pytest`, `tsc --noEmit` (strict), `next build`, `gitleaks detect`, and `alembic upgrade heads` on an empty TimescaleDB with pgvector.
+1. **Early seam merges** may go to `master` before exit criteria are met, but only for: the M1 Gate 0 bootstrap, a machine's own migration file and seed, and contract-change PRs approved by all four. CI must be green.
+2. **Final merge.** Open a PR from your branch to `master` only when every box in your §7 Exit criteria is `[x]`, CI is green and the branch is rebased on the latest `master`. CI means `ruff check`, `ruff format --check`, `pytest`, `tsc --noEmit` (strict), `next build`, `gitleaks detect`, and `alembic upgrade heads` on an empty TimescaleDB with pgvector.
 3. **Order at G3:** M1, then M2, then M3, then M4. Rebase after each one lands. Then M1 empties `AEGIS_USE_FAKES` and runs the integration suite (M1 §8).
 4. After a final merge, fixes go in small PRs named `fix/<machine>-<topic>`.
 5. Commit messages use Conventional Commits with the machine as scope, for example `feat(m2): gatekeeper bands`.
@@ -174,7 +174,7 @@ M3 makes Strict smart and makes the firewall learn. M3 provides the risky histor
 
 ### Phase B: schema, lookup and judge (H3–H8, Gate 1)
 
-- [ ] B-01 `0004_firewall_intel` migration: `risky_tool_patterns` (`status` in candidate, approved, rejected; `approved_in_version`, `retired_in_version`; source event; conditions JSON), `risky_behavior_events` (hypertable on `time`, PRD §7.5 columns plus `shadow`, `input_text_hash`, `input_embedding vector(768)` with an HNSW `vector_cosine_ops` index), `forensic_reports`, `drafts` (status in pending, failed_validation, approved, rejected; validation result; cluster ID; embedding). **Merge to `main` early** (seam merge).
+- [ ] B-01 `0004_firewall_intel` migration: `risky_tool_patterns` (`status` in candidate, approved, rejected; `approved_in_version`, `retired_in_version`; source event; conditions JSON), `risky_behavior_events` (hypertable on `time`, PRD §7.5 columns plus `shadow`, `input_text_hash`, `input_embedding vector(768)` with an HNSW `vector_cosine_ops` index), `forensic_reports`, `drafts` (status in pending, failed_validation, approved, rejected; validation result; cluster ID; embedding). **Merge to `master` early** (seam merge).
 - [ ] B-02 `lookup`: one SQL round trip per checked item (CTE) for the approved patterns at or below the session's pinned `pattern_version`, this user's same-tool events in the last 7 days, any earlier divert by this user, and the top-3 nearest attack embeddings. Input embedding comes from `GeminiClient.embed` with a 2 s timeout and is cached by text hash for `record_behavior`.
 - [ ] B-03 `record_behavior` and `add_candidate`: insert inside the caller's transaction. Embedding taken from the lookup cache, else `null` (the worker backfills it).
 - [ ] B-04 `current_pattern_version()`: the highest `approved_in_version`, or 0.
@@ -306,7 +306,7 @@ E-39 to E-43 are "as AFF v0.3". That document is not in this repo, so the cases 
 ## 8. Integration duties (H17–H21)
 
 - [ ] INT-1 Rebase after M2's final merge, merge third (§0.6).
-- [ ] INT-2 With fakes off, run E-39 to E-43, E-50, E-51, E-55 to E-57 and the M3-X cases on `main`. Report to M1's Progress log.
+- [ ] INT-2 With fakes off, run E-39 to E-43, E-50, E-51, E-55 to E-57 and the M3-X cases on `master`. Report to M1's Progress log.
 - [ ] INT-3 Named on-duty firewall admin for the demo (PRD §18.1 risk "nobody staffs the review queue"). Rehearse demo step 4 ("not ok" live) and step 5 (approve the split-attack draft).
 - [ ] INT-4 Demo tuning for step 4: the held Strict email must score in the Strict Review band (30–59). Risky history points from the Basic steps can push it into Deny. Use a separate demo student account for Strict, or check the score before the demo and record it.
 

@@ -69,17 +69,17 @@ All shapes are Pydantic v2 models in `backend/app/contracts/` (PRD D-16, §14). 
 
 | Gate | Hour | Whole-team exit criteria (PRD) | What each machine must have merged or shown |
 | --- | --- | --- | --- |
-| G0 | H3 | Stack deployed to Vercel and Railway and running locally; Auth0 roles work; contracts and fakes merged | M1: bootstrap PR merged to `main`. M2, M3, M4: rebased on it, Track A logic unit-tested |
+| G0 | H3 | Stack deployed to Vercel and Railway and running locally; Auth0 roles work; contracts and fakes merged | M1: bootstrap PR merged to `master`. M2, M3, M4: rebased on it, Track A logic unit-tested |
 | G1 | H8 | Basic denies a fixture attack with a logged score; contracts frozen | M2: `0003` migration and rule seed merged, Basic deny demo. M3: `0004` migration merged. M1: arena on `FakeFirewall` end to end. M4: classroom API on fakes |
 | G2 | H14 | MVP AFF: all four actions, Review loop, Divert, Strict with risky history. If any MVP test fails, cut all stretch items | M2 and M3: Strict works with real C7 on a shared `integration` branch. M1, M4: UI flows complete on fakes |
 | G3 | H17 | Forensics and drafts working; dashboard and quiz complete on fakes. No interface changes after this | Every machine's **Exit criteria** (its own §7) are checked. The final merge window opens |
 | G4 | H21 | End-to-end demo script passes twice in a row on real models | Joint, led by M1 |
 | — | H21–H24 | Rehearse, backup video, Devpost | Joint |
 
-### 0.6 Merge protocol to `main` (the master branch)
+### 0.6 Merge protocol to `master`
 
-1. **Early seam merges** may go to `main` before exit criteria are met, but only for: the M1 Gate 0 bootstrap, a machine's own migration file and seed, and contract-change PRs approved by all four. CI must be green.
-2. **Final merge.** Open a PR from your branch to `main` only when every box in your §7 Exit criteria is `[x]`, CI is green and the branch is rebased on the latest `main`. CI means `ruff check`, `ruff format --check`, `pytest`, `tsc --noEmit` (strict), `next build`, `gitleaks detect`, and `alembic upgrade heads` on an empty TimescaleDB with pgvector.
+1. **Early seam merges** may go to `master` before exit criteria are met, but only for: the M1 Gate 0 bootstrap, a machine's own migration file and seed, and contract-change PRs approved by all four. CI must be green.
+2. **Final merge.** Open a PR from your branch to `master` only when every box in your §7 Exit criteria is `[x]`, CI is green and the branch is rebased on the latest `master`. CI means `ruff check`, `ruff format --check`, `pytest`, `tsc --noEmit` (strict), `next build`, `gitleaks detect`, and `alembic upgrade heads` on an empty TimescaleDB with pgvector.
 3. **Order at G3:** M1, then M2, then M3, then M4. Rebase after each one lands. Then M1 empties `AEGIS_USE_FAKES` and runs the integration suite (M1 §8).
 4. After a final merge, fixes go in small PRs named `fix/<machine>-<topic>`.
 5. Commit messages use Conventional Commits with the machine as scope, for example `feat(m2): gatekeeper bands`.
@@ -195,7 +195,7 @@ Everything here is pure Python with unit tests. It needs no DB and no contracts 
 
 ### Phase B: schema, Off and Basic end to end (H3–H8, Gate 1)
 
-- [ ] B-01 `0003_firewall_core` migration: `rules` (versioned, never deleted), `fw_manifests`, `fw_claims`, `fw_conversation`, `fw_mock_state`, `fw_tickets`, `fw_events` (hypertable on `time`, every PRD §10.1 field plus `client_ip_hash` and `priority_alert`), `trace_back`. **Merge to `main` early** (seam merge, §0.6), so M3 and M4 can rebase on the real schema.
+- [ ] B-01 `0003_firewall_core` migration: `rules` (versioned, never deleted), `fw_manifests`, `fw_claims`, `fw_conversation`, `fw_mock_state`, `fw_tickets`, `fw_events` (hypertable on `time`, every PRD §10.1 field plus `client_ip_hash` and `priority_alert`), `trace_back`. **Merge to `master` early** (seam merge, §0.6), so M3 and M4 can rebase on the real schema.
 - [ ] B-02 Seed the starting rules R-001 to R-006 and built-ins B-01 to B-04 exactly as PRD §9.2, rule set version 1.
 - [ ] B-03 Event writer: one row per check per stage, in every mode, enums exactly as PRD §10.1. `shadow_decision` set only in Off. A layer that did not run is `null`, never `0`. `forensic_status = pending` only for Deny, Human Deny or Divert (decision or shadow decision) and for Off allows that delivered the secret (PRD §10.2). `NOTIFY fw_events_forensic` in the same transaction.
 - [ ] B-04 `register_session`: builds and stores the immutable manifest (agent definition, model IDs, level config, rule set version, risky pattern table version from `current_pattern_version()`, judge policy hash, thresholds, weights). Level `rule_version = 0` means "pin the latest rule set version now". Seeds `fw_mock_state` from `mock_state_seed`.
@@ -356,7 +356,7 @@ E-01 to E-04 are "as AFF v0.3". That document is not in this repo, so the expect
 ## 8. Integration duties (H17–H21)
 
 - [ ] INT-1 Rebase after M1's final merge, merge second (§0.6).
-- [ ] INT-2 With fakes off, run E-01 to E-54 and the M2-X cases on `main`. Report results to M1's Progress log.
+- [ ] INT-2 With fakes off, run E-01 to E-54 and the M2-X cases on `master`. Report results to M1's Progress log.
 - [ ] INT-3 Support demo steps 1–4 live: the Off shadow line "would have denied (R-003, B-01)", Basic direct deny, Basic split leak, Strict cumulative block, held email, Human Deny, the 95+ divert.
 - [ ] INT-4 Tune Strict thresholds and weights on the development fixtures only if the demo needs it, and record the values (PRD §18.2).
 

@@ -69,17 +69,17 @@ All shapes are Pydantic v2 models in `backend/app/contracts/` (PRD D-16, §14). 
 
 | Gate | Hour | Whole-team exit criteria (PRD) | What each machine must have merged or shown |
 | --- | --- | --- | --- |
-| G0 | H3 | Stack deployed to Vercel and Railway and running locally; Auth0 roles work; contracts and fakes merged | M1: bootstrap PR merged to `main`. M2, M3, M4: rebased on it, Track A logic unit-tested |
+| G0 | H3 | Stack deployed to Vercel and Railway and running locally; Auth0 roles work; contracts and fakes merged | M1: bootstrap PR merged to `master`. M2, M3, M4: rebased on it, Track A logic unit-tested |
 | G1 | H8 | Basic denies a fixture attack with a logged score; contracts frozen | M2: `0003` migration and rule seed merged, Basic deny demo. M3: `0004` migration merged. M1: arena on `FakeFirewall` end to end. M4: classroom API on fakes |
 | G2 | H14 | MVP AFF: all four actions, Review loop, Divert, Strict with risky history. If any MVP test fails, cut all stretch items | M2 and M3: Strict works with real C7 on a shared `integration` branch. M1, M4: UI flows complete on fakes |
 | G3 | H17 | Forensics and drafts working; dashboard and quiz complete on fakes. No interface changes after this | Every machine's **Exit criteria** (its own §7) are checked. The final merge window opens |
 | G4 | H21 | End-to-end demo script passes twice in a row on real models | Joint, led by M1 |
 | — | H21–H24 | Rehearse, backup video, Devpost | Joint |
 
-### 0.6 Merge protocol to `main` (the master branch)
+### 0.6 Merge protocol to `master`
 
-1. **Early seam merges** may go to `main` before exit criteria are met, but only for: the M1 Gate 0 bootstrap, a machine's own migration file and seed, and contract-change PRs approved by all four. CI must be green.
-2. **Final merge.** Open a PR from your branch to `main` only when every box in your §7 Exit criteria is `[x]`, CI is green and the branch is rebased on the latest `main`. CI means `ruff check`, `ruff format --check`, `pytest`, `tsc --noEmit` (strict), `next build`, `gitleaks detect`, and `alembic upgrade heads` on an empty TimescaleDB with pgvector.
+1. **Early seam merges** may go to `master` before exit criteria are met, but only for: the M1 Gate 0 bootstrap, a machine's own migration file and seed, and contract-change PRs approved by all four. CI must be green.
+2. **Final merge.** Open a PR from your branch to `master` only when every box in your §7 Exit criteria is `[x]`, CI is green and the branch is rebased on the latest `master`. CI means `ruff check`, `ruff format --check`, `pytest`, `tsc --noEmit` (strict), `next build`, `gitleaks detect`, and `alembic upgrade heads` on an empty TimescaleDB with pgvector.
 3. **Order at G3:** M1, then M2, then M3, then M4. Rebase after each one lands. Then M1 empties `AEGIS_USE_FAKES` and runs the integration suite (M1 §8).
 4. After a final merge, fixes go in small PRs named `fix/<machine>-<topic>`.
 5. Commit messages use Conventional Commits with the machine as scope, for example `feat(m2): gatekeeper bands`.
@@ -182,7 +182,7 @@ M4 provides no in-process contract to the other machines.
 
 ### Phase B: classroom API and dashboard on fakes (H3–H8, Gate 1)
 
-- [ ] B-01 `0005_classroom` migration: `quiz` (session ID, user ID, attempt number, status, rubric version, assigned by, times), `quiz_questions` (public fields plus server-only `answer_index`, `explanation`), `quiz_turns` (free-response conversation), `quiz_result` (MCQ score, per-rubric-item scores, total, percentage, feedback). Private answer key stored server-side. **Merge to `main` early** (seam merge).
+- [ ] B-01 `0005_classroom` migration: `quiz` (session ID, user ID, attempt number, status, rubric version, assigned by, times), `quiz_questions` (public fields plus server-only `answer_index`, `explanation`), `quiz_turns` (free-response conversation), `quiz_result` (MCQ score, per-rubric-item scores, total, percentage, feedback). Private answer key stored server-side. **Merge to `master` early** (seam merge).
 - [ ] B-02 Sessions list API (PRD §12.1): columns student, level, mode, secret obtained, diverted count, highest Sentinel score, started, quiz status, quiz score. Filters student, level, mode, outcome, diverted yes or no, quiz status, plus `admin_test`. Teachers see all; students only their own, fixed on the server; firewall admins read-only.
 - [ ] B-03 Session detail API (PRD §12.2): transcript (decoys marked), decisions (stage, decision, score and breakdown, rules fired, risky patterns matched), configuration snapshot, outcome (obtained or not, time, echo exclusion result), held items (stage, who decided, approved, human denied or expired), diverts (what the student attempted and what they believed they got, **no network data**), forensic summary, quiz block.
 - [ ] B-04 Insights API, teachers only (PRD §12.3): class overview (students, sessions, sessions per student, active today), outcomes per level, defense activity (top rules fired, decisions per mode, divert count), attack families, most-matched risky patterns, quiz panel (taken, open, average score, lowest-scoring rubric items). AFF numbers come from M2's 1-minute continuous aggregates through C3. Quiz numbers come from a view on M4's own tables.
@@ -284,7 +284,7 @@ M4 provides no in-process contract to the other machines.
 ## 8. Integration duties (H17–H21)
 
 - [ ] INT-1 Rebase after M3's final merge, merge last (§0.6).
-- [ ] INT-2 With fakes off, run E-58 to E-60 and the M4-X cases on `main`. Report to M1's Progress log.
+- [ ] INT-2 With fakes off, run E-58 to E-60 and the M4-X cases on `master`. Report to M1's Progress log.
 - [ ] INT-3 Support demo step 6 live: session list, compromised Off secret, the divert with what the student believed they got, launch a quiz, the student explains, the grade appears.
 - [ ] INT-4 Re-run the grader hardening samples on the final Gemini model ID if it changed after D-03.
 

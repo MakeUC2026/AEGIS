@@ -31,7 +31,7 @@ If you find a gap, fix the doc first and note the fix in its Progress log.
 
 **Order.** Phase A items A-01 to A-06, A-12 and A-13 (layout, contracts and fakes, `ports.py`,
 LLM clients, DB and `0001_foundation`, `main.py` with placeholder routers, CI, seed fixtures)
-come first, because M2, M3 and M4 rebase on them. Get them green and ready to merge to `main`
+come first, because M2, M3 and M4 rebase on them. Get them green and ready to merge to `master`
 before Phase B. Pushing to the shared GitHub remote (`origin`) is outward-facing: ask the user
 before every push or PR.
 

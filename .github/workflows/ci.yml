@@ -1,9 +1,9 @@
-# Merge rule for every machine (M1 §0.6): this must be green before any merge to main.
+# Merge rule for every machine (M1 §0.6): this must be green before any merge to master.
 name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
 
 permissions:
