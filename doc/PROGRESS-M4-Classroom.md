@@ -178,7 +178,7 @@ M4 provides no in-process contract to the other machines.
 - [x] A-03 MCQ grading in code: 1 point per correct answer, first answer counts.
 - [x] A-04 Context-builder helpers: wrap every transcript and event text in untrusted-data delimiters; the answer key shape (attack family, why it worked or failed, which layer made the difference, how to prevent it).
 - [x] A-05 Grader hardening sample set in `fixtures/quiz/m4_grader_samples.json` (PRD §13.5): at least 10 explanations, including asking for full marks, pasting the answer key, prompt injection in the answer, an empty answer, an off-topic answer, and at least 3 good answers. Each has an expected score range.
-- [ ] A-06 UI shells with mock data for sessions list, session detail, insights, secrets, quiz chat and quiz result, using M1's shell and theme.
+- [x] A-06 UI shells with mock data for sessions list, session detail, insights, secrets, quiz chat and quiz result, using M1's shell and theme.
 
 ### Phase B: classroom API and dashboard on fakes (H3–H8, Gate 1)
 
@@ -316,5 +316,5 @@ M4 provides no in-process contract to the other machines.
 | --- | --- | --- | --- | --- |
 | H0 | — | Doc created | — | Phase A |
 | A (backend) | — | A-01 to A-05 done: rubric r1 (hash pinned), quiz models + public model + answer key, MCQ grading, untrusted wrapper, 12 grader samples. 77 new tests, 98% coverage of app/quiz | — | A-06 UI shells (after review) |
-| A (UI shells) | — | A-06 built and checked in Playwright (Cho, Ada, Dee; desktop + phone); 49 new frontend tests. NOT ticked: waiting for UI sign-off | Mock rows keyed by display name (real user ids are UUIDs); students have no nav link to /classroom (M1 tabs) | Sign-off, then Phase B |
+| A (UI shells) | — | A-06 built and checked in Playwright (Cho, Ada, Dee; desktop + phone); 49 new frontend tests. Ticked after Duy said to tick it when done (Phase B request) | Mock rows keyed by display name (real user ids are UUIDs); students have no nav link to /classroom (M1 tabs) | Sign-off, then Phase B |
 | B (backend, B1-B7) | G1 prep | B-01..B-05 API done on fakes: migration 0005 (empty DB + idempotent + downgrade tested), sessions list, detail (staff and trimmed student view), insights, secrets, dev seed, X-6 grep test. 93 new backend tests (186 to 279), 99% coverage of app/classroom + app/quiz. UI wiring (B8) not started | `clean_db` TRUNCATE ... users CASCADE does clear the quiz tables (tested). Fakes: no outcome filter, secret_delivered_at always None, unlock_recap does not set recap_unlocked_at | Review stop 1, then B8 |
