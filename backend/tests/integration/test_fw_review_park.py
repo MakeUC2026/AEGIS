@@ -78,6 +78,7 @@ async def _session(
     risky: Any = None,
     judge: Any = None,
     owner: str | None = None,
+    rule_version: int = 0,
 ) -> tuple[str, str]:
     """`risky` and `judge` register the session (they pin the pattern version and the judge
     model); the defaults are the fakes. `owner` adds a session for an existing user."""
@@ -113,7 +114,7 @@ async def _session(
             level_id=level_id,
             level_version=1,
             mode=mode,  # type: ignore[arg-type]
-            rule_version=0,
+            rule_version=rule_version,  # 0 pins the latest rule set; otherwise that set
             weights=DEFAULT_WEIGHTS,
             thresholds=BASIC_THRESHOLDS if mode == "basic" else STRICT_THRESHOLDS,
             review_timeout_s=review_timeout_s,

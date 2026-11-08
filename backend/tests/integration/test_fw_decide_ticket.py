@@ -39,15 +39,16 @@ from tests.integration.test_fw_review_park import (
 CLIENT = ClientMeta()
 
 
-async def _admin(engine: AsyncEngine) -> str:
+async def _admin(engine: AsyncEngine, sub: str = "auth0|adm") -> str:
     async with engine.begin() as conn:
         return str(
             (
                 await conn.execute(
                     text(
-                        "INSERT INTO users (auth0_sub, role) VALUES ('auth0|adm', 'firewall_admin')"
+                        "INSERT INTO users (auth0_sub, role) VALUES (:sub, 'firewall_admin')"
                         " RETURNING id"
-                    )
+                    ),
+                    {"sub": sub},
                 )
             ).scalar_one()
         )
