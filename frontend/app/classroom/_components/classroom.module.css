@@ -526,3 +526,14 @@
 .wideTable {
   min-width: 640px;
 }
+
+.rotate {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+@media (max-width: 640px) {
+  .rotate {
+    justify-items: start;
+  }
+}

@@ -18,7 +18,7 @@ const MODES: readonly Mode[] = ["off", "basic", "strict"];
 const OUTCOMES = ["obtained", "not_obtained"] as const;
 const YES_NO = ["yes", "no"] as const;
 const QUIZ_STATUSES: readonly QuizStatus[] = ["not_taken", "assigned", "in_progress", "done"];
-const LEVEL_ID = /^[a-z0-9-]{1,32}$/;
+const LEVEL_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const STUDENT_MAX = 64;
 
 function first(raw: Raw, key: string): string | undefined {

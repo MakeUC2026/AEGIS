@@ -1,6 +1,4 @@
-import { ITEM_TITLES, type ItemKey } from "@/app/quiz/_lib/rubric";
-
-import { MOCK_INSIGHTS as I } from "../_lib/mock-class";
+import type { InsightsData } from "../_lib/adapt";
 import styles from "./classroom.module.css";
 
 function Bars({ rows, scale }: { rows: readonly { label: string; value: number }[]; scale?: number }) {
@@ -20,7 +18,7 @@ function Bars({ rows, scale }: { rows: readonly { label: string; value: number }
   );
 }
 
-export function InsightsView() {
+export function InsightsView({ data: I }: { data: InsightsData }) {
   return (
     <div className={styles.grid}>
       <section className={`${styles.block} ${styles.wide}`} aria-labelledby="i-overview">
@@ -35,25 +33,32 @@ export function InsightsView() {
 
       <section className={styles.block} aria-labelledby="i-outcomes">
         <h2 id="i-outcomes">Outcomes per level</h2>
-        <table className={styles.simpleTable}>
-          <thead>
-            <tr><th scope="col">Level</th><th scope="col">Obtained</th><th scope="col">Not yet</th></tr>
-          </thead>
-          <tbody>
-            {I.outcomes.map((o) => (
-              <tr key={o.levelName}>
-                <th scope="row">{o.levelName}</th>
-                <td>{o.obtained.join(", ") || "-"}</td>
-                <td>{o.notYet.join(", ") || "-"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {I.outcomes.length === 0 ? (
+          <p className="muted">No levels yet.</p>
+        ) : (
+          <table className={styles.simpleTable}>
+            <thead>
+              <tr><th scope="col">Level</th><th scope="col">Sessions</th><th scope="col">Obtained</th><th scope="col">Not yet</th><th scope="col">Rate</th></tr>
+            </thead>
+            <tbody>
+              {I.outcomes.map((o) => (
+                <tr key={o.levelName}>
+                  <th scope="row">{o.levelName}</th>
+                  <td className={styles.num}>{o.sessions}</td>
+                  <td className={styles.num}>{o.obtained}</td>
+                  <td className={styles.num}>{o.notObtained}</td>
+                  <td className={styles.num}>{o.ratePercent}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
 
       <section className={styles.block} aria-labelledby="i-defense">
         <h2 id="i-defense">Defense activity</h2>
         <p className={styles.sub}>Rules fired most</p>
+        {I.defense.topRules.length === 0 ? <p className="muted">No rules fired yet.</p> : null}
         <Bars rows={I.defense.topRules.map((r) => ({ label: r.id, value: r.count }))} />
         <p className={styles.sub} style={{ marginTop: 16 }}>Decisions per mode</p>
         <table className={styles.simpleTable}>
@@ -90,10 +95,11 @@ export function InsightsView() {
         <div className={styles.stats}>
           <div className={styles.stat}><strong>{I.quiz.taken}</strong><span className="muted">taken</span></div>
           <div className={styles.stat}><strong>{I.quiz.open}</strong><span className="muted">open</span></div>
-          <div className={styles.stat}><strong>{I.quiz.averagePercent}%</strong><span className="muted">average score</span></div>
+          <div className={styles.stat}><strong>{I.quiz.averagePercent === null ? "-" : `${I.quiz.averagePercent}%`}</strong><span className="muted">average score</span></div>
         </div>
         <p className={styles.sub} style={{ marginTop: 16 }}>Rubric items the class scores lowest on (average out of 3)</p>
-        <Bars scale={3} rows={I.quiz.lowestItems.map((x) => ({ label: ITEM_TITLES[x.key as ItemKey], value: x.average }))} />
+        {I.quiz.lowestItems.length === 0 ? <p className="muted">No graded quizzes yet.</p> : null}
+        <Bars scale={3} rows={I.quiz.lowestItems.map((x) => ({ label: x.title, value: x.average }))} />
       </section>
     </div>
   );

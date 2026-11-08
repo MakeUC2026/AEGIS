@@ -4,12 +4,6 @@ import type { Filters } from "../_lib/filters";
 import type { ViewerKind } from "../_lib/types";
 import styles from "./classroom.module.css";
 
-const LEVELS = [
-  { id: "level-1", name: "Level 1" },
-  { id: "level-2", name: "Level 2" },
-  { id: "level-3", name: "Level 3" },
-];
-
 interface SelectProps {
   name: string;
   label: string;
@@ -39,7 +33,15 @@ const YES_NO = [
 ];
 
 // A plain GET form: filter state lives in the URL, so reload and shared links restore it (M4-X07).
-export function FilterForm({ filters, kind }: { filters: Filters; kind: ViewerKind }) {
+export function FilterForm({
+  filters,
+  kind,
+  levels,
+}: {
+  filters: Filters;
+  kind: ViewerKind;
+  levels: readonly { id: string; name: string }[];
+}) {
   const staff = kind !== "student";
   return (
     <form method="get" action="/classroom" className={styles.filters} aria-label="Filter sessions">
@@ -49,7 +51,7 @@ export function FilterForm({ filters, kind }: { filters: Filters; kind: ViewerKi
           <input name="student" defaultValue={filters.student ?? ""} maxLength={64} placeholder="Name contains" />
         </label>
       ) : null}
-      <Select name="level" label="Level" value={filters.level} options={LEVELS.map((l) => ({ value: l.id, label: l.name }))} />
+      <Select name="level" label="Level" value={filters.level} options={levels.map((l) => ({ value: l.id, label: l.name }))} />
       <Select
         name="mode"
         label="Mode"

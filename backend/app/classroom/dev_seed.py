@@ -104,6 +104,7 @@ def add_session(
     arena.sessions = {**arena.sessions, sid: session}
     for i, (student, bot) in enumerate(messages or []):
         mid = f"m{i + 1}"
+        blocked = bool(scores) and i < len(scores) and scores[i][0] == "deny"
         t = started + timedelta(minutes=i)
         read.transcripts[fw_id].append(
             TranscriptItem(message_id=mid, time=t, speaker="student", text=student)
@@ -114,7 +115,7 @@ def add_session(
                 time=t,
                 speaker="bot",
                 text=bot,
-                status="replied",
+                status="blocked" if blocked else "replied",
                 is_decoy=any(bot == shown for _, shown in diverts or []),
             )
         )

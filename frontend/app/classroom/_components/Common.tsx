@@ -24,6 +24,15 @@ export function AccessDenied({ what, home }: { what: string; home: string }) {
   );
 }
 
+export function Unavailable({ what }: { what: string }) {
+  return (
+    <div className={styles.denied} role="alert">
+      <h2>Could not load {what}</h2>
+      <p>The classroom service did not answer. Reload the page to try again.</p>
+    </div>
+  );
+}
+
 type Tone = "good" | "warn" | "bad" | "info" | "quiet";
 
 export function Pill({ tone, children }: { tone: Tone; children: React.ReactNode }) {
