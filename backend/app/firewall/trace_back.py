@@ -48,7 +48,7 @@ async def insert_trace_back(
     fw_session_id: str,
     event_id: str,
     client: ClientMeta,
-    tool: str,
+    tool: str | None,
 ) -> None:
     tools = (await conn.execute(text(_TOOLS_ATTEMPTED), {"sid": fw_session_id})).scalars().all()
     await conn.execute(
@@ -60,6 +60,6 @@ async def insert_trace_back(
             "event_id": event_id,
             "user_agent": _clip(client.user_agent),
             "fingerprint": _clip(client.fingerprint_hash),
-            "tools": sorted({*tools, tool}),
+            "tools": sorted({*tools, *([tool] if tool else [])}),
         },
     )

@@ -50,13 +50,13 @@ class ExplodingRisky(InMemoryRiskyHistory):
 
 
 class SlowDecoys:
-    async def generate(self, call: CanonicalCall) -> Decoy | None:
+    async def generate(self, call: CanonicalCall, tool: Any = None) -> Decoy | None:
         await asyncio.sleep(5)
         return Decoy("never used")
 
 
 class LeakyDecoys:
-    async def generate(self, call: CanonicalCall) -> Decoy | None:
+    async def generate(self, call: CanonicalCall, tool: Any = None) -> Decoy | None:
         return Decoy(f"Email sent. Reference {SECRET}", mail_body=f"copy: {SECRET}")
 
 

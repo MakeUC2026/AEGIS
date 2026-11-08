@@ -32,14 +32,15 @@ from app.firewall.canonical import CanonicalCall
 from app.firewall.checks import Checked, check_input, check_output, check_tool_call
 from app.firewall.claims import claim_message, complete_claim, release_claim
 from app.firewall.context import TurnContext, load_context
-from app.firewall.decoys import DecoyGenerator, make_decoy
-from app.firewall.divert import divert_call
+from app.firewall.decoys import DecoyGenerator, make_decoy, reply_decoy
+from app.firewall.divert import divert_call, record_divert
 from app.firewall.events import EventRow, SourceTrust, insert_event, row_from_decision
 from app.firewall.leak import echo_excluded, scan_cumulative
 from app.firewall.limits import check_text
 from app.firewall.review import Continuation, HeldKind, new_ticket_id, open_ticket
 from app.firewall.textnorm import storable
 from app.firewall.tool_exec import execute_tool
+from app.firewall.trace_back import insert_trace_back, new_trace_id
 from app.firewall.views import turn_result
 from app.llm.base import ChatMessage, ChatModel, ToolCall
 
@@ -185,7 +186,8 @@ async def _divert(
     if canonical is None:
         return None
     try:
-        decoy = await make_decoy(turn.decoys, canonical, turn.ctx.secret)
+        tool_def = next((t for t in turn.ctx.tools if t.name == canonical.tool), None)
+        decoy = await make_decoy(turn.decoys, canonical, turn.ctx.secret, tool_def)
         async with engine.begin() as conn:
             done = await divert_call(
                 conn,
@@ -250,16 +252,32 @@ async def execute_allowed(
     return ToolStep.result(limited.text)
 
 
-def _delivered(turn: Turn, message: str) -> bool:
-    if not turn.visible_new:
+@dataclass(frozen=True)
+class ReplyDivert:
+    """A diverted reply (C-06): its event, trace-back ID and the real reply, kept withheld."""
+
+    event: EventRow
+    trace_id: str
+    withheld: str
+
+
+def _delivered(turn: Turn, message: str, extra: tuple[str, ...] = ()) -> bool:
+    visible = [*turn.visible_new, *extra]
+    if not visible:
         return False
     ctx = turn.ctx
-    leak = scan_cumulative(ctx.visible_output, "\n".join(turn.visible_new), ctx.secret)
+    leak = scan_cumulative(ctx.visible_output, "\n".join(visible), ctx.secret)
     typed = (*ctx.student_inputs, message)
     return leak is not None and not leak.partial and not echo_excluded(typed, ctx.secret)
 
 
-def _rows(turn: Turn, message: str, bot: BotTurn | None, replied: bool) -> list[dict[str, Any]]:
+def _rows(
+    turn: Turn,
+    message: str,
+    bot: BotTurn | None,
+    replied: bool,
+    withheld: str | None = None,
+) -> list[dict[str, Any]]:
     base = {"sid": turn.ctx.fw_session_id, "mid": turn.message_id, "tool": None}
     rows = [
         {
@@ -273,6 +291,8 @@ def _rows(turn: Turn, message: str, bot: BotTurn | None, replied: bool) -> list[
     ]
     for msg in bot.new_messages if bot else ():
         rows.append({**base, **_row_for(msg, turn, replied)})
+    if withheld is not None and rows[-1]["role"] == "bot":
+        rows[-1]["payload"]["withheld"] = withheld  # the real reply, never shown (C-06)
     return [  # model text can hold NUL or lone surrogates; Postgres stores neither
         {
             **r,
@@ -319,16 +339,18 @@ async def finish(
     bot: BotTurn | None,
     status: PlayerStatus,
     reply: str | None,
+    divert: ReplyDivert | None = None,
 ) -> TurnResult:
-    if status == "replied" and reply:
-        turn.visible_new.append(reply)
-    delivered = _delivered(turn, message)
+    shown = (reply,) if status == "replied" and reply else ()
+    delivered = _delivered(turn, message, shown)
     events = list(turn.later_events)
     if events and delivered:
         events[-1] = replace(events[-1], secret_delivered=True)
     result = turn.result(status, reply, delivered)
+    withheld = divert.withheld if divert else None
+    rows = _rows(turn, message, bot, status == "replied", withheld)
     async with engine.begin() as conn:
-        await _commit(conn, turn, events, _rows(turn, message, bot, status == "replied"), result)
+        await _commit(conn, turn, events, rows, result, divert)
     return result
 
 
@@ -401,9 +423,31 @@ async def _commit(
     events: list[EventRow],
     rows: list[dict[str, Any]],
     result: TurnResult,
+    divert: ReplyDivert | None = None,
 ) -> None:
+    if divert is not None:  # the trace-back row first; the record joins this transaction
+        await insert_trace_back(
+            conn,
+            trace_id=divert.trace_id,
+            user_id=divert.event.user_id,
+            fw_session_id=divert.event.fw_session_id,
+            event_id=divert.event.event_id,
+            client=turn.client,
+            tool=None,
+        )
     for event in events:
         await insert_event(conn, event)
+    if divert is not None:
+        await record_divert(
+            turn.risky,
+            conn,
+            event=divert.event,
+            tool=None,
+            args_hash=None,
+            student_message=turn.student_message,
+            trace_id=divert.trace_id,
+            now=datetime.now(UTC),
+        )
     await _drop_parked(conn, turn)
     for row in rows:
         await conn.execute(text(_CONVERSATION), row)
@@ -468,6 +512,41 @@ async def after_input(
     return await after_bot(engine, turn, message, user_text, bot, clock)
 
 
+async def _divert_reply(
+    engine: AsyncEngine, turn: Turn, message: str, bot: BotTurn, checked: Checked
+) -> TurnResult:
+    """Divert a reply (C-06, Strict outbound hit): the student gets a decoy reply, the real
+    one is withheld. The records join the turn's final transaction; if that fails the reply
+    is blocked instead."""
+    ctx = turn.ctx
+    shown = reply_decoy(ctx.secret, ctx.fw_session_id, leaked=checked.leak is not None)
+    trace_id = new_trace_id()
+    event = replace(_event(turn, checked, "diverted"), trace_back_id=trace_id)
+    swapped = replace(
+        bot, new_messages=(*bot.new_messages[:-1], ChatMessage(role="assistant", content=shown))
+    )
+    turn.later_events.append(event)
+    turn.diverted = True
+    try:
+        return await finish(
+            engine,
+            turn,
+            message,
+            swapped,
+            "replied",
+            shown,
+            ReplyDivert(event, trace_id, checked.text),
+        )
+    except Exception as exc:  # fail closed: nothing was written, so block the reply instead
+        logger.warning("reply divert failed closed: %s", type(exc).__name__)
+        turn.later_events.pop()
+        turn.diverted = False
+        denied = replace(checked, gate=replace(checked.gate, decision="deny"))
+        turn.checks[-1] = denied
+        turn.later_events.append(_event(turn, denied, "not_executed"))
+        return await finish(engine, turn, message, bot, "blocked", None)
+
+
 async def after_bot(
     engine: AsyncEngine,
     turn: Turn,
@@ -487,6 +566,8 @@ async def after_bot(
     turn.checks.append(checked_output)
     if checked_output.gate.decision == "review":
         return await _park(engine, turn, message, user_text, bot, "reply", checked_output)
+    if checked_output.gate.decision == "divert":
+        return await _divert_reply(engine, turn, message, bot, checked_output)
     allowed = checked_output.allowed
     turn.later_events.append(
         _event(turn, checked_output, "executed" if allowed else "not_executed")

@@ -28,7 +28,8 @@ from app.contracts.firewall import (
     ToolDef,
 )
 from app.firewall import ports
-from app.firewall.interface import RealFirewall, build_llm
+from app.firewall.decoy_gemini import GeminiDecoys
+from app.firewall.interface import RealFirewall, build_decoys, build_llm
 from app.firewall.seed import seed
 from app.llm.base import ChatMessage, ChatResult, LLMError, ToolCall
 from app.llm.scripted import ScriptedLLM
@@ -109,6 +110,32 @@ async def test_without_an_api_key_every_turn_is_bot_unavailable(engine: AsyncEng
     llm = build_llm(settings, engine)
     with pytest.raises(LLMError):
         await llm.chat_with_tools("m", [ChatMessage(role="user", content="hi")], [])
+
+
+def test_decoys_use_gemini_only_when_a_key_and_model_are_configured(
+    engine: AsyncEngine,
+) -> None:
+    keyless = Settings(_env_file=None, APP_ENV="test", GEMINI_API_KEY="")
+    assert build_decoys(keyless, build_llm(keyless, engine)) is None  # templates only
+    keyed = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        GEMINI_API_KEY="test-key-not-real",
+        AEGIS_GEMINI_FLASH_MODEL_ID="flash-test",
+    )
+    decoys = build_decoys(keyed, build_llm(keyed, engine))
+    assert isinstance(decoys, GeminiDecoys) and decoys._model_id == "flash-test"
+    both = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        GEMINI_API_KEY="test-key-not-real",
+        AEGIS_BOT_MODEL_ID="bot-test",
+        AEGIS_GEMINI_FLASH_MODEL_ID="flash-test",
+    )
+    preferred = build_decoys(both, build_llm(both, engine))
+    assert isinstance(preferred, GeminiDecoys) and preferred._model_id == "bot-test"
+    no_model = Settings(_env_file=None, APP_ENV="test", GEMINI_API_KEY="test-key-not-real")
+    assert build_decoys(no_model, build_llm(no_model, engine)) is None
 
 
 @pytest.fixture

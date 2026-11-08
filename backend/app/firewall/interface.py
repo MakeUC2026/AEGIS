@@ -30,11 +30,12 @@ from app.contracts.sentinel import JudgePort, RiskyHistoryPort
 from app.db.engine import make_engine
 from app.firewall.catalog import read_catalog
 from app.firewall.closing import close_session
+from app.firewall.decoy_gemini import GeminiDecoys
 from app.firewall.decoys import DecoyGenerator
 from app.firewall.pipeline import run_message
 from app.firewall.sessions import register_session
 from app.firewall.tickets import check_ticket
-from app.llm.base import ChatMessage, ChatModel, ChatResult, LLMError
+from app.llm.base import ChatMessage, ChatModel, ChatResult, JsonModel, LLMError
 from app.llm.budget import DailyBudget
 from app.llm.gemini import GeminiClient
 
@@ -111,11 +112,23 @@ def build_llm(settings: Settings, engine: AsyncEngine) -> ChatModel:
     )
 
 
+def build_decoys(settings: Settings, llm: ChatModel) -> DecoyGenerator | None:
+    """Gemini decoys (C-06) need a key and a model ID; without them Divert uses its templates.
+
+    The bot model is preferred: measured on the dev key, `gemini-2.5-flash` answers a decoy in
+    1.5 to 3.4 s, inside the 5 s limit, while `gemini-3.5-flash` took 4 to 12 s (M2-DD-47)."""
+    model_id = settings.bot_model_id or settings.gemini_flash_model_id
+    if model_id and isinstance(llm, JsonModel):
+        return GeminiDecoys(llm, model_id)
+    return None
+
+
 def create() -> FirewallPort:
     from app.firewall import ports  # imported here: ports imports this module lazily
 
     settings = get_settings()
     engine = make_engine(settings.database_url)
+    llm = build_llm(settings, engine)
     return RealFirewall(
-        engine, build_llm(settings, engine), ports.get_risky_history(), ports.get_judge()
+        engine, llm, ports.get_risky_history(), ports.get_judge(), build_decoys(settings, llm)
     )

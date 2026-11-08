@@ -94,6 +94,40 @@ async def _replay(conn: AsyncConnection, sid: str, call_id: str, result: str) ->
     return Diverted(call_id, result, visible, True, None)
 
 
+async def record_divert(
+    risky: RiskyHistoryPort | None,
+    conn: AsyncConnection,
+    *,
+    event: EventRow,
+    tool: str | None,
+    args_hash: str | None,
+    student_message: str,
+    trace_id: str,
+    now: datetime,
+) -> None:
+    """C7 `record_behavior(action="divert")` on the divert transaction (tool call or reply)."""
+    if risky is None:
+        return
+    await risky.record_behavior(
+        RiskyBehaviorRecord(
+            time=now,
+            user_id=event.user_id,
+            fw_session_id=event.fw_session_id,
+            event_id=event.event_id,
+            stage=event.stage,
+            tool=tool,
+            args_hash=args_hash,
+            action="divert",
+            sentinel_score=event.sentinel_score,
+            rule_ids=list(event.rule_ids),
+            input_text=student_message,
+            trace_id=trace_id,
+            shadow=False,
+        ),
+        conn,
+    )
+
+
 async def divert_call(
     conn: AsyncConnection,
     *,
@@ -132,25 +166,16 @@ async def divert_call(
         tool=call.tool,
     )
     await insert_event(conn, event)
-    if risky is not None:
-        await risky.record_behavior(
-            RiskyBehaviorRecord(
-                time=now,
-                user_id=event.user_id,
-                fw_session_id=sid,
-                event_id=event.event_id,
-                stage=event.stage,
-                tool=call.tool,
-                args_hash=call.args_hash,
-                action="divert",
-                sentinel_score=event.sentinel_score,
-                rule_ids=list(event.rule_ids),
-                input_text=student_message,
-                trace_id=trace_id,
-                shadow=False,
-            ),
-            conn,
-        )
+    await record_divert(
+        risky,
+        conn,
+        event=event,
+        tool=call.tool,
+        args_hash=call.args_hash,
+        student_message=student_message,
+        trace_id=trace_id,
+        now=now,
+    )
     await conn.execute(
         text(_RECORD),
         {
