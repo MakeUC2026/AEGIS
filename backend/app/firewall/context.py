@@ -85,6 +85,12 @@ def _rule(row: Mapping[str, Any]) -> RuleDef:
     )
 
 
+async def rules_at(conn: AsyncConnection, set_version: int) -> list[RuleDef]:
+    """Each rule's newest version at or below `set_version` (deprecated ones included)."""
+    rows = (await conn.execute(text(_RULES), {"v": set_version})).mappings()
+    return [_rule(r) for r in rows]
+
+
 def _history_message(row: Mapping[str, Any], payload: Mapping[str, Any]) -> ChatMessage | None:
     role = row["role"]
     if role == "student":
@@ -130,10 +136,7 @@ async def load_context(engine: AsyncEngine, fw_session_id: str) -> TurnContext:
         row = (await conn.execute(text(_SESSION), {"sid": fw_session_id})).mappings().first()
         if row is None:
             raise NotFound("session not found")
-        rules = [
-            _rule(r)
-            for r in (await conn.execute(text(_RULES), {"v": row["rule_set_version"]})).mappings()
-        ]
+        rules = await rules_at(conn, row["rule_set_version"])
         conversation = await _conversation(conn, fw_session_id)
         denies = (await conn.execute(text(_DENIES), {"sid": fw_session_id})).scalar_one()
     agent = _json(row["agent"])

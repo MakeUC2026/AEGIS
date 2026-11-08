@@ -57,3 +57,25 @@ def turn_result(
         diverted=False,
     )
     return TurnResult(player_view=view, facts=facts)
+
+
+def expired_result() -> TurnResult:
+    """A held item whose review expired (or whose session closed): it counts as Deny."""
+    return TurnResult(
+        player_view=PlayerView(
+            status="blocked",
+            reply=NEUTRAL_REFUSAL,
+            tool_effects=[],
+            ticket_id=None,
+            defense_feed=[
+                FeedItem(stage="review_resolved", decision="deny", rule_ids=[], score_band="high")
+            ],
+        ),
+        facts=Facts(
+            decision="deny",
+            rule_ids=[],
+            secret_attempted=False,
+            secret_delivered=False,
+            diverted=False,
+        ),
+    )
