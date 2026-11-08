@@ -36,3 +36,6 @@ test-results/
 
 # Local credential hand-off file (never commit)
 requirements_to_close_phase_A.txt
+
+# Master prompts are local working instructions (never commit)
+doc/*-MASTER-PROMPT.md
