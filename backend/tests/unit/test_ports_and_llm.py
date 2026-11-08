@@ -54,6 +54,9 @@ def test_unknown_fake_name_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_missing_real_implementation_is_a_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AEGIS_USE_FAKES", "")
+    # Every seam has a real implementation now (M2 landed C2, C3, C6), so point one at a module
+    # that does not exist: the error for an unbuilt seam must stay clear.
+    monkeypatch.setitem(ports.REAL_FACTORIES, "firewall", "app.firewall.not_built_yet:create")
     ports.reset()
     with pytest.raises(ports.PortUnavailable, match="firewall"):
         ports.get_firewall()

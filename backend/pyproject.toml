@@ -14,7 +14,9 @@ dependencies = [
     "httpx>=0.28",
     "pyjwt[crypto]>=2.15",
     "auth0-api-python==1.0.0b10",
+    "jsonschema>=4.23",
     "google-re2>=1.1",
+    "maxminddb>=3",
 ]
 
 [dependency-groups]
@@ -25,6 +27,7 @@ dev = [
     "hypothesis>=6.170",
     "ruff>=0.17",
     "pip-audit>=2.10",
+    "mmdb-writer>=0.2",
 ]
 
 [tool.uv]

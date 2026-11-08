@@ -98,8 +98,55 @@ async def _event(engine: AsyncEngine, **over: Any) -> None:
 def test_fw_core_is_its_own_head_with_its_label(engine: AsyncEngine) -> None:
     heads = run_alembic("heads", "--verbose")
     assert heads.returncode == 0, heads.stderr
-    assert "0003_firewall_core" in heads.stdout
+    assert "0003b_fw_cagg" in heads.stdout  # the continuous aggregates sit on top of 0003
+    assert "Parent: 0003_firewall_core" in heads.stdout
     assert "fw_core" in heads.stdout
+
+
+async def test_the_continuous_aggregates_are_real_time_with_a_one_minute_refresh(
+    engine: AsyncEngine,
+) -> None:
+    async with engine.connect() as conn:
+        views = (
+            await conn.execute(
+                text(
+                    "SELECT view_name, materialized_only FROM"
+                    " timescaledb_information.continuous_aggregates ORDER BY view_name"
+                )
+            )
+        ).all()
+        jobs = (
+            await conn.execute(
+                text(
+                    "SELECT hypertable_name, schedule_interval FROM timescaledb_information.jobs"
+                    " WHERE proc_name = 'policy_refresh_continuous_aggregate'"
+                    " AND hypertable_name IN ('fw_rule_fires_1m', 'fw_decisions_1m')"
+                    " ORDER BY hypertable_name"
+                )
+            )
+        ).all()
+    assert [(v.view_name, v.materialized_only) for v in views] == [
+        ("fw_decisions_1m", False),
+        ("fw_rule_fires_1m", False),
+    ]
+    assert [(j.hypertable_name, j.schedule_interval.total_seconds()) for j in jobs] == [
+        ("fw_decisions_1m", 60.0),
+        ("fw_rule_fires_1m", 60.0),
+    ]
+
+
+async def test_events_record_whether_echo_exclusion_applied(engine: AsyncEngine) -> None:
+    async with engine.connect() as conn:
+        column = (
+            await conn.execute(
+                text(
+                    "SELECT data_type, is_nullable, column_default FROM information_schema.columns"
+                    " WHERE table_name = 'fw_events' AND column_name = 'echo_excluded'"
+                )
+            )
+        ).one()
+    assert (column.data_type, column.is_nullable) == ("boolean", "NO")
+    assert "false" in column.column_default
 
 
 async def test_every_m2_table_exists(engine: AsyncEngine) -> None:
