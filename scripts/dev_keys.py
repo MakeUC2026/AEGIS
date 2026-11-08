@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "backend"))
 
-from app.auth.testing import make_keys  # noqa: E402
+from app.auth.testing import make_keys
 
 ENV = pathlib.Path(__file__).resolve().parents[1] / ".env"
 DEV_VARS = {
