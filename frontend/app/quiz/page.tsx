@@ -46,7 +46,7 @@ export default async function Page() {
       ) : null}
       {items.length === 0 ? (
         <p className={cls.empty}>
-          No quizzes yet. Open one of your <Link href="/classroom">sessions</Link> and start a quiz.
+          No quizzes yet. Open a finished session in <Link href="/arena/sessions">My sessions</Link> and start one.
         </p>
       ) : (
         <ul className={styles.list}>

@@ -162,7 +162,7 @@ async def test_mine_lists_only_my_quizzes(qw: QuizWorld) -> None:
     assert (await qw.w.client.get("/api/quiz/mine", headers=qw.ben.headers)).json()["items"] == []
 
 
-async def test_get_quiz_is_owner_or_teacher_only(qw: QuizWorld) -> None:
+async def test_get_quiz_is_owner_or_staff_only(qw: QuizWorld) -> None:
     s = qw.session()
     qw.script(json=[good_quiz()])
     qid = (await qw.start(qw.ada, s.id)).json()["quiz_id"]
@@ -170,7 +170,7 @@ async def test_get_quiz_is_owner_or_teacher_only(qw: QuizWorld) -> None:
     assert (await qw.w.client.get(url, headers=qw.ada.headers)).status_code == 200
     assert (await qw.w.client.get(url, headers=qw.cho.headers)).status_code == 200
     assert (await qw.w.client.get(url, headers=qw.ben.headers)).status_code == 403
-    assert (await qw.w.client.get(url, headers=qw.dee.headers)).status_code == 403
+    assert (await qw.w.client.get(url, headers=qw.dee.headers)).status_code == 200
     missing = "/api/quiz/quizzes/00000000-0000-4000-8000-00000000ffff"
     assert (await qw.w.client.get(missing, headers=qw.ada.headers)).status_code == 404
     assert (

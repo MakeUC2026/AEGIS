@@ -14,7 +14,6 @@ export function canView(screen: Screen, roles: readonly string[]): boolean {
   const kind = viewerKind(roles);
   switch (screen) {
     case "insights":
-      return kind === "teacher";
     case "secrets":
       return kind === "teacher" || kind === "firewall_admin";
     case "quiz_list":

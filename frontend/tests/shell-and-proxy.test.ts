@@ -1,35 +1,52 @@
 import { describe, expect, it } from "vitest";
 
-import { tabsFor } from "@/components/shell/tabs";
+import { activeHref, sectionsFor, tabsFor } from "@/components/shell/tabs";
 import { devAuthAllowed, DEV_USERS } from "@/lib/dev-auth";
 import { buildUpstreamUrl, upstreamHeaders } from "@/lib/upstream";
 
-describe("tabsFor (PRD §4.2 tab table)", () => {
-  it("student sees arena, own sessions and quizzes only", () => {
-    expect(tabsFor(["student"]).map((t) => t.href)).toEqual(["/arena", "/arena/sessions", "/quiz"]);
+describe("sectionsFor / tabsFor (PRD §4.2, two sections)", () => {
+  it("student: Practice in Agent Framework, then the classroom cards", () => {
+    expect(sectionsFor(["student"]).map((s) => s.id)).toEqual(["framework", "classroom"]);
+    expect(tabsFor(["student"]).map((t) => t.href)).toEqual([
+      "/arena",
+      "/classroom",
+      "/quiz",
+      "/arena/sessions",
+    ]);
   });
 
-  it("teacher sees classroom but not the arena", () => {
+  it("teacher sees only the classroom: no arena, no firewall console", () => {
+    expect(sectionsFor(["teacher"]).map((s) => s.id)).toEqual(["classroom"]);
     const hrefs = tabsFor(["teacher"]).map((t) => t.href);
-    expect(hrefs).toContain("/classroom");
-    expect(hrefs).not.toContain("/arena");
-    expect(hrefs).not.toContain("/admin");
+    expect(hrefs).toEqual(["/classroom", "/classroom/insights", "/classroom/secrets"]);
   });
 
-  it("firewall admin sees arena (test sessions), classroom read-only and the firewall console", () => {
+  it("firewall admin sees both sections, landing on the overview", () => {
     const hrefs = tabsFor(["firewall_admin"]).map((t) => t.href);
-    expect(hrefs).toEqual(expect.arrayContaining(["/arena", "/classroom", "/admin"]));
+    expect(hrefs[0]).toBe("/admin/overview");
+    expect(hrefs).toEqual(expect.arrayContaining(["/admin/logs", "/arena", "/admin", "/classroom", "/classroom/insights"]));
     expect(hrefs).not.toContain("/quiz");
   });
 
   it("dual-role user gets the union without duplicates", () => {
     const hrefs = tabsFor(["teacher", "firewall_admin"]).map((t) => t.href);
     expect(new Set(hrefs).size).toBe(hrefs.length);
-    expect(hrefs).toEqual(expect.arrayContaining(["/arena", "/classroom", "/admin"]));
+    expect(hrefs).toEqual(expect.arrayContaining(["/arena", "/classroom", "/admin/overview"]));
   });
 
-  it("unknown roles give no extra tabs", () => {
+  it("unknown roles give no sections", () => {
+    expect(sectionsFor(["superuser"])).toEqual([]);
     expect(tabsFor(["superuser"])).toEqual([]);
+  });
+});
+
+describe("activeHref", () => {
+  const tabs = tabsFor(["teacher"]);
+  it("picks the longest matching prefix", () => {
+    expect(activeHref(tabs, "/classroom")).toBe("/classroom");
+    expect(activeHref(tabs, "/classroom/insights")).toBe("/classroom/insights");
+    expect(activeHref(tabs, "/classroom/sessions/abc")).toBe("/classroom");
+    expect(activeHref(tabs, "/classroomx")).toBeNull();
   });
 });
 

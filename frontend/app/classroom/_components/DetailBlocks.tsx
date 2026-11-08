@@ -8,8 +8,10 @@ import styles from "./classroom.module.css";
 
 export function Transcript({ d }: { d: SessionDetail }) {
   return (
-    <section className={`${styles.block} ${styles.wide}`} aria-labelledby="h-transcript">
-      <h2 id="h-transcript">Transcript</h2>
+    <details className={`${styles.block} ${styles.wide}`} open>
+      <summary>
+        <h2 id="h-transcript">Transcript</h2>
+      </summary>
       <ol className={styles.log}>
         {d.transcript.map((t) => (
           <li key={t.id} className={`${styles.msg} ${styles[t.speaker]} ${t.isDecoy ? styles.decoy : ""}`}>
@@ -22,14 +24,16 @@ export function Transcript({ d }: { d: SessionDetail }) {
           </li>
         ))}
       </ol>
-    </section>
+    </details>
   );
 }
 
 export function Decisions({ d }: { d: SessionDetail }) {
   return (
-    <section className={`${styles.block} ${styles.wide}`} aria-labelledby="h-decisions">
-      <h2 id="h-decisions">Decisions</h2>
+    <details className={`${styles.block} ${styles.wide}`} open>
+      <summary>
+        <h2 id="h-decisions">Decisions</h2>
+      </summary>
       <div className={styles.scroll}>
         <table className={`${styles.simpleTable} ${styles.wideTable}`}>
           <thead>
@@ -62,15 +66,17 @@ export function Decisions({ d }: { d: SessionDetail }) {
           </tbody>
         </table>
       </div>
-    </section>
+    </details>
   );
 }
 
 export function Snapshot({ d }: { d: SessionDetail }) {
   const c = d.config;
   return (
-    <section className={styles.block} aria-labelledby="h-config">
-      <h2 id="h-config">Configuration snapshot</h2>
+    <details className={styles.block}>
+      <summary>
+        <h2 id="h-config">Configuration snapshot</h2>
+      </summary>
       <p className={styles.sub}>The session is pinned to this setup. Later changes do not affect it.</p>
       <dl className={styles.kv}>
         <dt>Level version</dt>
@@ -86,14 +92,16 @@ export function Snapshot({ d }: { d: SessionDetail }) {
         <dt>Judge model</dt>
         <dd>{c.judgeModelId ?? "none"}</dd>
       </dl>
-    </section>
+    </details>
   );
 }
 
 export function Outcome({ d }: { d: SessionDetail }) {
   return (
-    <section className={styles.block} aria-labelledby="h-outcome">
-      <h2 id="h-outcome">Outcome</h2>
+    <details className={styles.block} open>
+      <summary>
+        <h2 id="h-outcome">Outcome</h2>
+      </summary>
       <dl className={styles.kv}>
         <dt>Secret</dt>
         <dd>
@@ -104,14 +112,16 @@ export function Outcome({ d }: { d: SessionDetail }) {
         <dt>Echo exclusion</dt>
         <dd>{d.outcome.echoExcluded ? "Excluded (the bot only repeated the student)" : "Not excluded"}</dd>
       </dl>
-    </section>
+    </details>
   );
 }
 
 export function HeldItems({ d }: { d: SessionDetail }) {
   return (
-    <section className={styles.block} aria-labelledby="h-held">
-      <h2 id="h-held">Held items</h2>
+    <details className={styles.block}>
+      <summary>
+        <h2 id="h-held">Held items</h2>
+      </summary>
       {d.heldItems.length === 0 ? (
         <p className="muted">Nothing was held for review.</p>
       ) : (
@@ -124,14 +134,16 @@ export function HeldItems({ d }: { d: SessionDetail }) {
           ))}
         </ul>
       )}
-    </section>
+    </details>
   );
 }
 
 export function Diverts({ d }: { d: SessionDetail }) {
   return (
-    <section className={`${styles.block} ${styles.wide}`} aria-labelledby="h-diverts">
-      <h2 id="h-diverts">Diverts</h2>
+    <details className={`${styles.block} ${styles.wide}`}>
+      <summary>
+        <h2 id="h-diverts">Diverts</h2>
+      </summary>
       <p className={styles.sub}>What the student tried, and what they believed they got. No network data is kept here.</p>
       {d.diverts.length === 0 ? (
         <p className="muted">No turns were diverted.</p>
@@ -151,14 +163,16 @@ export function Diverts({ d }: { d: SessionDetail }) {
           ))}
         </ul>
       )}
-    </section>
+    </details>
   );
 }
 
 export function Forensics({ d }: { d: SessionDetail }) {
   return (
-    <section className={styles.block} aria-labelledby="h-forensics">
-      <h2 id="h-forensics">Forensic summary</h2>
+    <details className={styles.block}>
+      <summary>
+        <h2 id="h-forensics">Forensic summary</h2>
+      </summary>
       {d.forensics ? (
         <dl className={styles.kv}>
           <dt>Attack family</dt>
@@ -169,7 +183,7 @@ export function Forensics({ d }: { d: SessionDetail }) {
       ) : (
         <p className="muted">No forensic report for this session.</p>
       )}
-    </section>
+    </details>
   );
 }
 

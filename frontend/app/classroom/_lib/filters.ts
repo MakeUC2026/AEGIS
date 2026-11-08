@@ -1,4 +1,4 @@
-import type { Mode, QuizStatus, SessionRow, ViewerKind } from "./types";
+import type { Mode, QuizStatus } from "./types";
 
 // Filter state lives in the URL (PRD §12.1, M4-X07). Unknown values are ignored (M4-X08).
 
@@ -61,24 +61,3 @@ export function toQueryString(f: Filters): string {
   return p.toString();
 }
 
-export interface Viewer {
-  kind: ViewerKind;
-  userId: string;
-}
-
-export function applyFilters(rows: readonly SessionRow[], f: Filters, viewer: Viewer): SessionRow[] {
-  // A student sees their own sessions only; the student filter is ignored (M4-X01).
-  const scoped =
-    viewer.kind === "student" ? rows.filter((r) => r.studentId === viewer.userId) : [...rows];
-  const needle = viewer.kind === "student" ? undefined : f.student?.toLowerCase();
-  return scoped.filter(
-    (r) =>
-      (!needle || r.studentName.toLowerCase().includes(needle)) &&
-      (!f.level || r.levelId === f.level) &&
-      (!f.mode || r.mode === f.mode) &&
-      (!f.outcome || r.secretObtained === (f.outcome === "obtained")) &&
-      (!f.diverted || (r.divertedCount > 0) === (f.diverted === "yes")) &&
-      (!f.quizStatus || r.quizStatus === f.quizStatus) &&
-      (!f.adminTest || r.adminTest === (f.adminTest === "yes")),
-  );
-}

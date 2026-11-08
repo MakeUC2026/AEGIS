@@ -1,41 +1,73 @@
-import Link from "next/link";
+"use client";
 
-import { tabsFor } from "@/components/shell/tabs";
-import type { Me } from "@/lib/server-api";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useState } from "react";
+
+import { Icon, LogoMark } from "@/components/shell/Icon";
+import { activeHref, type Section } from "@/components/shell/tabs";
 
 interface Props {
-  me: Me | null;
-  signInPath: string;
+  sections: Section[];
+  name: string;
+  roleLabel: string;
   signOutPath: string;
 }
 
-// Role-aware tab nav (PRD §4.2). Shared and frozen after Gate 0 (M1 §0.2 rule 3).
-export function Shell({ me, signInPath, signOutPath }: Props) {
-  const tabs = me ? tabsFor(me.roles) : [];
+// App sidebar: logo, the two sections (Agent Framework / Classroom) and the account.
+// Below 900px it collapses to a top bar with a menu button.
+export function Shell({ sections, name, roleLabel, signOutPath }: Props) {
+  const path = usePathname();
+  const [open, setOpen] = useState(false);
+  const current = activeHref(
+    sections.flatMap((s) => s.tabs),
+    path,
+  );
   return (
-    <header className="shell">
-      <Link href="/" className="logo">
-        <i aria-hidden="true" />
-        Injection Arena
-      </Link>
-      <nav aria-label="Main">
-        {tabs.map((tab) => (
-          <Link key={tab.href} href={tab.href}>
-            {tab.label}
-          </Link>
+    <aside className="side" data-open={open}>
+      <div className="side-top">
+        <Link href="/" className="brandmark" aria-label="AEGIS home">
+          <LogoMark />
+          <span>
+            <b>AEGIS</b>
+            <small>Agent security</small>
+          </span>
+        </Link>
+        <button className="btn-alt menu-btn" type="button" aria-expanded={open} aria-controls="side-nav" onClick={() => setOpen(!open)}>
+          <Icon name="menu" />
+          <span>Menu</span>
+        </button>
+      </div>
+      <nav id="side-nav" className="side-nav" aria-label="Main">
+        {sections.map((s) => (
+          <div key={s.id} data-section={s.id}>
+            <p className="side-label" data-section={s.id}>
+              {s.label}
+            </p>
+            <ul>
+              {s.tabs.map((t) => (
+                <li key={t.href}>
+                  <Link href={t.href} aria-current={t.href === current ? "page" : undefined} onClick={() => setOpen(false)}>
+                    <Icon name={t.icon} />
+                    {t.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
         ))}
       </nav>
-      <div className="who">
-        {me ? (
-          <>
-            <span className="muted">{me.name ?? me.email ?? "signed in"}</span>
-            {/* Auth routes need a full navigation, not a client-side Link. */}
-            <a href={signOutPath}>Sign out</a>
-          </>
-        ) : (
-          <a href={signInPath}>Sign in</a>
-        )}
+      <div className="side-user">
+        <span className="avatar" aria-hidden="true">
+          {name.slice(0, 1).toUpperCase()}
+        </span>
+        <span className="who">
+          <strong>{name}</strong>
+          <span>{roleLabel}</span>
+        </span>
+        {/* Auth routes need a full navigation, not a client-side Link. */}
+        <a href={signOutPath}>Sign out</a>
       </div>
-    </header>
+    </aside>
   );
 }

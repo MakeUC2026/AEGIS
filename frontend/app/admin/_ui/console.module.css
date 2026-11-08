@@ -1,0 +1,511 @@
+/* Firewall console screens (real /api/admin data). Colors come from globals.css variables only. */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.kpi {
+  display: grid;
+  gap: 4px;
+}
+
+.kpi span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.kpi strong {
+  font-family: var(--font-display);
+  font-size: 2.3rem;
+  line-height: 1.1;
+}
+
+.kpi small {
+  color: var(--muted);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.panelHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.panelHead h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.legend {
+  display: flex;
+  gap: 14px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+
+.chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.health {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.health li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.health li:last-child {
+  border-bottom: 0;
+}
+
+.health small {
+  display: block;
+  color: var(--muted);
+}
+
+.chain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.step {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  padding: 14px;
+  display: grid;
+  gap: 4px;
+  min-height: 108px;
+  transition: border-color 0.25s, opacity 0.25s, background 0.25s;
+}
+
+.step span {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.step strong {
+  font-size: 1rem;
+}
+
+.step small {
+  color: var(--muted);
+}
+
+.step[data-state="pending"] {
+  opacity: 0.35;
+}
+
+.step[data-state="active"] {
+  border-color: var(--teal);
+  background: rgb(117 232 222 / 0.08);
+}
+
+.step[data-state="done"]:last-child[data-tone="bad"] {
+  border-color: var(--danger);
+  background: rgb(255 135 151 / 0.08);
+}
+
+.step[data-state="done"]:last-child[data-tone="info"] {
+  border-color: var(--info);
+  background: rgb(134 205 255 / 0.08);
+}
+
+.step[data-state="done"]:last-child[data-tone="warn"] {
+  border-color: var(--warn);
+  background: rgb(245 193 108 / 0.08);
+}
+
+.step[data-state="done"]:last-child[data-tone="good"] {
+  border-color: var(--accent);
+}
+
+.attempt {
+  margin: 12px 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* Live firewall */
+.filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.filters button {
+  font: inherit;
+  font-size: 0.88rem;
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.filters button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+.logs {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  display: grid;
+  gap: 2px;
+}
+
+.item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 76px 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  font: inherit;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  cursor: pointer;
+}
+
+.item:hover {
+  background: var(--panel-2);
+}
+
+.item[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: rgb(123 255 184 / 0.08);
+}
+
+.item time {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.item .what {
+  min-width: 0;
+}
+
+.item .what b {
+  display: block;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item .what small {
+  color: var(--muted);
+}
+
+.detail {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.detail h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.kv dt {
+  color: var(--muted);
+}
+
+.kv dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.bar i {
+  display: block;
+  height: 100%;
+  background: var(--tone, var(--accent));
+}
+
+.vchain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.vchain li {
+  border-left: 2px solid var(--teal);
+  padding: 2px 0 2px 12px;
+}
+
+.vchain span {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+@media (max-width: 980px) {
+  .row,
+  .logs {
+    grid-template-columns: 1fr;
+  }
+
+  .chain {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .detail {
+    position: static;
+  }
+}
+
+@media (max-width: 520px) {
+  .chain {
+    grid-template-columns: 1fr;
+  }
+
+  .item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .item .what {
+    grid-column: 1 / -1;
+  }
+}
+
+/* --- console chrome --- */
+.tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin: -8px 0 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tabs a {
+  padding: 10px 14px;
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  font-weight: 500;
+}
+
+.tabs a:hover {
+  color: var(--fg);
+}
+
+.tabs a[aria-current="page"] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.state {
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+}
+
+.json {
+  margin: 0;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.table th {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.form label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.form .full {
+  grid-column: 1 / -1;
+}
+
+.form input,
+.form select,
+.form textarea,
+.field {
+  font: inherit;
+  color: var(--fg);
+  background: var(--input);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  min-height: 42px;
+}
+
+.form textarea {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  min-height: 140px;
+  resize: vertical;
+}
+
+.check {
+  display: flex !important;
+  align-items: center;
+  gap: 8px !important;
+  color: var(--fg) !important;
+}
+
+.check input {
+  min-height: 0;
+  width: 18px;
+  height: 18px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.err {
+  color: var(--danger);
+  margin: 0;
+}
+
+.ok {
+  color: var(--accent);
+  margin: 0;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.priority {
+  border-color: var(--danger) !important;
+}
+
+.toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}

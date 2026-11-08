@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from app.classroom.access import is_staff
 from app.contracts.arena import ArenaServicePort, ArenaSession
 from app.contracts.firewall_read import FirewallReadPort
 from app.contracts.users import CurrentUser
@@ -76,7 +77,7 @@ class QuizDeps:
 
 
 def can_see_quiz(user: CurrentUser, row: QuizRow) -> bool:
-    return user.id == row.user_id or user.has("teacher")
+    return user.id == row.user_id or is_staff(user)
 
 
 async def _session(deps: QuizDeps, session_id: str) -> tuple[ArenaSession, uuid.UUID]:
@@ -250,7 +251,7 @@ async def attempts_view(deps: QuizDeps, user: CurrentUser, session_id: str) -> A
     sid = repo.parse_uuid(session_id)
     if sid is None:
         raise SessionMissing("session not found")
-    owner = None if user.has("teacher") else uuid.UUID(user.id)
+    owner = None if is_staff(user) else uuid.UUID(user.id)
     async with deps.engine.connect() as conn:
         records = await repo.attempts(conn, session_id=sid, user_id=owner)
     ordered = sorted(records, key=lambda r: r.attempt_number, reverse=True)
@@ -433,7 +434,7 @@ async def get_result(deps: QuizDeps, user: CurrentUser, quiz_id: str) -> ResultV
     async with deps.engine.connect() as conn:
         row = await load_quiz(deps, user, quiz_id, conn=conn)
         stored = await repo.get_result(conn, uuid.UUID(row.id))
-    return _result_view(row, stored, staff=user.has("teacher"))
+    return _result_view(row, stored, staff=is_staff(user))
 
 
 async def finish_quiz(

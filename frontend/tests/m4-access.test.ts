@@ -17,10 +17,10 @@ describe("viewerKind (roles are checked on the server too; this only drives the 
 });
 
 describe("canView", () => {
-  it("insights are teacher only (M4-X03)", () => {
+  it("insights are for teacher and firewall admin, not students", () => {
     expect(canView("insights", ["teacher"])).toBe(true);
     expect(canView("insights", [])).toBe(false);
-    expect(canView("insights", ["firewall_admin"])).toBe(false);
+    expect(canView("insights", ["firewall_admin"])).toBe(true);
   });
   it("secrets are for teacher and firewall admin, not students (M4-X03, M4-X05)", () => {
     expect(canView("secrets", ["teacher"])).toBe(true);

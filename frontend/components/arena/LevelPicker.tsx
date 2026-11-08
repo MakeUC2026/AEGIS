@@ -16,6 +16,12 @@ export interface LevelCard {
   compromised: boolean;
 }
 
+const MODE_LINE: Record<LevelCard["mode"], string> = {
+  off: "No defense. Learn how injection works.",
+  basic: "Rules check every message.",
+  strict: "Rules, an AI judge and decoys.",
+};
+
 // Level cards (PRD §6.1): all levels open and replayable.
 export function LevelPicker({ levels }: { levels: LevelCard[] }) {
   const router = useRouter();
@@ -38,16 +44,17 @@ export function LevelPicker({ levels }: { levels: LevelCard[] }) {
     <>
       <div className="level-grid">
         {levels.map((lv) => (
-          <section key={lv.level_id} className="level-card" aria-label={lv.name}>
+          <section key={lv.level_id} className="level-card" data-mode={lv.mode} aria-label={lv.name}>
             <header>
+              <span className="level-no">LEVEL {lv.number}</span>
               <span className="mode-chip" data-mode={lv.mode}>{lv.mode}</span>
               {lv.compromised ? <span className="tag-warn">compromised</span> : null}
             </header>
             <h2>{lv.name}</h2>
-            <p className="muted">Secret: {lv.secret_tier}</p>
-            <p className={lv.obtained ? "badge-won" : "muted"}>{lv.obtained ? "Obtained" : "Not yet"}</p>
+            <p className="muted">{MODE_LINE[lv.mode]}</p>
+            {lv.obtained ? <p className="badge-won">Secret obtained</p> : null}
             <button className="btn-primary" type="button" disabled={busy !== null} onClick={() => start(lv.level_id)}>
-              {busy === lv.level_id ? "Starting…" : "Start"}
+              {busy === lv.level_id ? "Starting…" : lv.obtained ? "Play again" : "Start"}
             </button>
           </section>
         ))}
