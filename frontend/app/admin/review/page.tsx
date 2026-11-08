@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
 import type { Ticket } from "../_ui/types";
-import { ConsoleTabs, PageHead, State, WAITING_M2, act, useApi, words } from "../_ui/ui";
+import { ConsoleTabs, PageHead, State, act, useApi, words } from "../_ui/ui";
 import s from "../_ui/console.module.css";
 
 // Review queue (PRD §8.3): held turns, priority alerts first, decide before they expire.
@@ -30,7 +30,7 @@ export default function ReviewQueue() {
     <main className="wide">
       <PageHead title="Firewall console" line="Held turns wait here. Nothing runs until you decide." />
       <ConsoleTabs />
-      <State api={api} empty={`Nothing awaiting review. ${WAITING_M2}`}>
+      <State api={api} empty="Nothing awaiting review.">
         {(rows) => {
           const sorted = [...rows].sort((a, b) => Number(b.priority_alert) - Number(a.priority_alert) || a.expires_at.localeCompare(b.expires_at));
           const t = sorted.find((x) => x.ticket_id === selected) ?? sorted[0];

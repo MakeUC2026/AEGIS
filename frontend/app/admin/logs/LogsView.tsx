@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import type { AuditRow, EventRow, ForensicRow } from "../_ui/types";
-import { Chip, Json, PageHead, Segments, State, WAITING_M2, clock, useApi, words } from "../_ui/ui";
+import { Chip, Json, PageHead, Segments, State, clock, useApi, words } from "../_ui/ui";
 import s from "../_ui/console.module.css";
 
 const VIEWS = ["events", "forensics", "audit"] as const;
@@ -20,7 +20,7 @@ function Events({ initialId }: { initialId?: string }) {
         <Segments label="Filter by decision" value={decision} options={DECISIONS} onChange={setDecision} />
         <small className="muted">{api.updated ? `Updated ${api.updated.toLocaleTimeString()}` : ""}</small>
       </div>
-      <State api={api} empty={decision === "all" ? WAITING_M2 : "No events with this decision."}>
+      <State api={api} empty={decision === "all" ? "No events yet." : "No events with this decision."}>
         {(rows) => {
           const sel = rows.find((r) => r.event_id === selected) ?? rows[0];
           return (

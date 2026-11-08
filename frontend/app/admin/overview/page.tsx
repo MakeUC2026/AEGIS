@@ -3,7 +3,7 @@
 import Link from "next/link";
 
 import type { EventRow, Ticket } from "../_ui/types";
-import { BLOCKED, Chip, PageHead, WAITING_M2, clock, useApi, words } from "../_ui/ui";
+import { BLOCKED, Chip, PageHead, clock, useApi, words } from "../_ui/ui";
 import s from "../_ui/console.module.css";
 
 const LIMIT = 200;
@@ -37,7 +37,7 @@ export default function Overview() {
           <Link href="/admin/logs">View all</Link>
         </div>
         {events.error ? <p className={s.err}>{events.error}</p> : null}
-        {events.data && rows.length === 0 ? <p className="muted">{WAITING_M2}</p> : null}
+        {events.data && rows.length === 0 ? <p className="muted">No events yet.</p> : null}
         <ul className={s.health}>
           {rows.slice(0, 15).map((e) => (
             <li key={e.event_id}>

@@ -18,7 +18,6 @@ function Bars({ rows, scale }: { rows: readonly { label: string; value: number }
   );
 }
 
-const M2 = "Waiting for M2.";
 
 function Empty({ when, text }: { when: boolean; text: string }) {
   return when ? <p className="muted">{text}</p> : null;
@@ -71,7 +70,7 @@ export function InsightsView({ data: I }: { data: InsightsData }) {
 
       <section className={`${styles.block} ${styles.span3}`} aria-labelledby="i-modes">
         <h2 id="i-modes">Decisions per mode</h2>
-        <Empty when={I.defense.decisionsPerMode.length === 0} text={`No decisions yet. ${M2}`} />
+        <Empty when={I.defense.decisionsPerMode.length === 0} text={`No decisions yet.`} />
         {I.defense.decisionsPerMode.length ? (
           <table className={styles.simpleTable}>
             <thead>
@@ -94,19 +93,19 @@ export function InsightsView({ data: I }: { data: InsightsData }) {
 
       <section className={`${styles.block} ${styles.span2}`} aria-labelledby="i-rules">
         <h2 id="i-rules">Rules fired most</h2>
-        <Empty when={I.defense.topRules.length === 0} text={`No rules fired yet. ${M2}`} />
+        <Empty when={I.defense.topRules.length === 0} text={`No rules fired yet.`} />
         <Bars rows={I.defense.topRules.map((r) => ({ label: r.id, value: r.count }))} />
       </section>
 
       <section className={`${styles.block} ${styles.span2}`} aria-labelledby="i-families">
         <h2 id="i-families">Attack families</h2>
-        <Empty when={I.attackFamilies.length === 0} text={`No attacks classified yet. ${M2}`} />
+        <Empty when={I.attackFamilies.length === 0} text={`No attacks classified yet.`} />
         <Bars rows={I.attackFamilies.map((f) => ({ label: f.family.replaceAll("_", " "), value: f.count }))} />
       </section>
 
       <section className={`${styles.block} ${styles.span2}`} aria-labelledby="i-patterns">
         <h2 id="i-patterns">Risky patterns</h2>
-        <Empty when={I.riskyPatterns.length === 0} text={`No risky patterns matched yet. ${M2}`} />
+        <Empty when={I.riskyPatterns.length === 0} text={`No risky patterns matched yet.`} />
         <Bars rows={I.riskyPatterns.map((p) => ({ label: p.id, value: p.count }))} />
       </section>
 

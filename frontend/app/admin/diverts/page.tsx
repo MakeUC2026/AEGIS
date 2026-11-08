@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import type { DivertAdminItem } from "../_ui/types";
-import { ConsoleTabs, PageHead, State, WAITING_M2, clock, useApi, words } from "../_ui/ui";
+import { ConsoleTabs, PageHead, State, clock, useApi, words } from "../_ui/ui";
 import s from "../_ui/console.module.css";
 
 // Diverts and trace-back (PRD §8.4, §8.5): what was attempted, the decoy, and the network trace.
@@ -14,7 +14,7 @@ export default function Diverts() {
     <main className="wide">
       <PageHead title="Firewall console" line="Attacks sent to a decoy, with their trace-back." />
       <ConsoleTabs />
-      <State api={api} empty={WAITING_M2}>
+      <State api={api} empty="No diverts yet. A diverted attack shows here with its decoy and trace-back.">
         {(rows) => {
           const d = rows.find((r) => r.divert.event_id === selected) ?? rows[0];
           const tb = d.trace_back;

@@ -94,9 +94,6 @@ export function Chip({ value }: { value: string }) {
   );
 }
 
-// Shown where data depends on M2's firewall seams (events, tickets, diverts, insight counts).
-export const WAITING_M2 = "Waiting for M2: the firewall event pipeline is not merged yet.";
-
 export const words = (v: string) => v.replaceAll("_", " ");
 export const clock = (iso: string) => `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
 export const BLOCKED: readonly Decision[] = ["deny", "human_deny", "divert"];

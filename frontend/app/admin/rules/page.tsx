@@ -8,6 +8,9 @@ import { APPLIES_ON, ATLAS_TAGS, CHECKS, OPERATORS_BY_CHECK, RULE_ACTIONS, type 
 import { Chip, ConsoleTabs, PageHead, Segments, State, act, useApi, words } from "../_ui/ui";
 import s from "../_ui/console.module.css";
 
+// B-03 (path resolution) is part of the canonical call form: the firewall never switches it off.
+const ALWAYS_ON = "B-03";
+
 const BLANK: RuleForm = { applies_on: "player_message", checks: "text", argument_name: null, operator: "contains", value: "", action: "score_only", weight: 20, atlas_tag: null, note: "" };
 const NUMERIC = new Set(["turn_count", "earlier_denies"]);
 
@@ -203,9 +206,13 @@ export default function Rules() {
                                 Edit
                               </button>
                             ) : null}
-                            <button className="btn-alt" type="button" onClick={() => run(`admin/rules/${r.rule_id}/enabled`, { enabled: !r.enabled })}>
-                              {r.enabled ? "Disable" : "Enable"}
-                            </button>
+                            {r.rule_id === ALWAYS_ON ? (
+                              <span className="muted">always on</span>
+                            ) : (
+                              <button className="btn-alt" type="button" onClick={() => run(`admin/rules/${r.rule_id}/enabled`, { enabled: !r.enabled })}>
+                                {r.enabled ? "Disable" : "Enable"}
+                              </button>
+                            )}
                             {r.builtin ? null : (
                               <button className="btn-alt" type="button" onClick={() => setConfirming(r.rule_id)}>
                                 Delete
