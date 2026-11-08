@@ -8,7 +8,7 @@
 | Source of truth | [PRD-Injection-Arena-Unified.md](PRD-Injection-Arena-Unified.md) (PRD v3.1). When this doc and the PRD disagree, the PRD wins unless the PRD leaves the point open. Then this doc's §0 decides |
 | Sibling docs | [M1 Foundation and Arena](PROGRESS-M1-Foundation-Arena.md) · [M3 AFF Intel and Admin](PROGRESS-M3-AFF-Intel-Admin.md) · [M4 Classroom](PROGRESS-M4-Classroom.md) |
 | PRD sections owned | §0 (D-01, D-02, D-03, D-03a, D-04, D-06, D-09, D-10, D-11), §7.1, §7.2, §7.3 layer 1 and hard overrides, §7.4, §7.6, §8.1–§8.6, §9.1–§9.4, §10.1, §14.3, §14.4 |
-| Status | `NOT STARTED` |
+| Status | `IN PROGRESS`: started 2026-11-07 on the M1 computer, in git worktree `../AEGIS-m2` (test DB `aegis_test_m2`, dev ports 8001 and 3001). Running under the M2 master prompt (`doc/M2-MASTER-PROMPT.md`, local only, never committed). **DM1-1 done** (contract sign-off). Next: Phase A |
 
 Status legend for every checkbox list: `[ ]` not started · `[~]` in progress (add a note) · `[x]` done and tested · `[!]` blocked (add a note to the Progress log).
 
@@ -237,7 +237,7 @@ Everything here is pure Python with unit tests. It needs no DB and no contracts 
 
 Items M1 cannot finish without M2. M1 tracks them in its §4c and ticks its side when these land.
 
-- [ ] DM1-1 **Contract sign-off before G1** (M1 AC-8, X-2): review the shapes M2 provides or consumes in `backend/app/contracts/` (C2, C3, C6, C7). Then either record "M2 signs off" in the M1 Progress log or open a contract-change PR. Contracts freeze at G1.
+- [x] DM1-1 *Done 2026-11-07. Reviewed C2, C3, C6 and C7 against PRD §7 to §10, §14.3, §14.4 and §15.1. **One change needed and made by M1 (M1 DD-36):** `FeedItem.shadow_decision` lacked `divert`, but Off shadows all four actions (PRD D-02, §5.2), so R-006 or a score of 95 or more in Off would have failed validation. The other findings need no contract change and are recorded as M2-DD-01 to M2-DD-05. Sign-off recorded in M1's Progress log. M2 picks up DD-36 by rebasing after M1's PR merges; nothing in Phase A needs it.* **Contract sign-off before G1** (M1 AC-8, X-2): review the shapes M2 provides or consumes in `backend/app/contracts/` (C2, C3, C6, C7). Then either record "M2 signs off" in the M1 Progress log or open a contract-change PR. Contracts freeze at G1.
 - [ ] DM1-2 **Rule seed hook** (M1 D-02): put the B-02 starting rules in `backend/app/firewall/seed.py` as `async def seed(engine) -> None`, idempotent. `scripts/seed_demo.py` and the Compose start-up seed then pick it up automatically. See the handoff, §4 table.
 - [ ] DM1-3 **Real C2 on `integration` at G1** (M1 D-01, X-6): push the C2 implementation with `create()` (DD-05) to the `integration` branch and tell M1. M1 then runs the arena Off and Basic flows with `firewall` removed from `AEGIS_USE_FAKES`. This is M1's side of M2 AC-8.
 
@@ -395,8 +395,22 @@ E-01 to E-04 are "as AFF v0.3". That document is not in this repo, so the expect
 
 ---
 
+## 10a. Design decisions (where the PRD left a detail open)
+
+| # | Decision | Reason |
+| --- | --- | --- |
+| M2-DD-01 | An enforced Divert needs `LevelConfig.divert_enabled`. When it is false in Basic or Strict, a Divert becomes Deny, and the real tool still never runs. Shadow decisions in Off are computed as if divert were enabled (Off's flag is false by design) | PRD §5.2 gives every level a divert flag but does not say what happens when it is off; Deny is the strictest action that does not deceive |
+| M2-DD-02 | `TicketResult.expires_at` stays an ISO 8601 string, emitted in UTC as `YYYY-MM-DDTHH:MM:SSZ` | The contract types it as `str` (unlike DD-04's aware datetimes), and the arena already consumes it; changing the type would break M1 for no gain |
+| M2-DD-03 | `read_api.create()` returns one object implementing every `FirewallReadPort` method. `get_forensics` and `get_attack_family_counts` delegate to M3's `app/firewall/forensics_read.py` when present, else return `[]` | `ports.py` maps the whole `read` seam to `app.firewall.read_api:create`, but those two functions are M3's (C3 docstring) |
+| M2-DD-04 | `DivertItem.attempted_summary` is built from the tool name and a coarse target class (for example "send_email to an external address"), never from raw arguments | I-3: tool arguments never leave the AFF; teachers still see what was attempted |
+| M2-DD-05 | `register_session` validates the level config: threshold keys `review`, `deny`, `divert` and `alert` in order, and every Sentinel weight key M1 seeds (`keyword_per_hit`, `keyword_max`, `encoding`, `session_deny_per`, `session_deny_max`, `rapid_retries`, `high_risk_tool`, `untrusted_context`, plus the Strict layer-2 keys). A missing or invalid key rejects the registration | Fail closed: a level that cannot be scored must not start; the keys are the ones in `app/arena/seed.py::DEFAULT_WEIGHTS` |
+| M2-DD-06 | Phase A is built directly on the contract models, not local dataclasses | G0 is already merged, so the doc's "until G0" step is moot |
+
+---
+
 ## 11. Progress log
 
 | Time (H+) | Gate | Done | Blocked or at risk | Next |
 | --- | --- | --- | --- | --- |
 | H0 | — | Doc created | — | Phase A |
+| H0+ | Pre-G1 | **Started.** Worktree `../AEGIS-m2` on `m2/aff-core` from `master` `27df46c`; own test DB and ports; baseline green (backend 213, frontend 40). **DM1-1 done:** contract review gave one contract change, made by M1 as DD-36 (Off shadow divert), and M2-DD-01 to M2-DD-06 recorded | DD-36 reaches this branch after M1's PR merges | Phase A: A-03 normalizer, A-01 canonicalizer, A-02 limits, A-04 scanners, A-05 rules, A-06 Sentinel, A-07 Gatekeeper |
