@@ -153,7 +153,7 @@ class Sentinel:
             try:
                 history = await asyncio.wait_for(self._risky.lookup(item), HISTORY_TIMEOUT_S)
             except Exception as exc:  # fail closed: a history error is Deny
-                logger.warning("risky-history lookup failed: %s", type(exc).__name__)
+                logger.warning("risky-history lookup failed: %s: %s", type(exc).__name__, exc)
                 latency["history"] = _ms(started)
                 return Intel(history_error=True, latency_ms=latency)
             latency["history"] = _ms(started)
