@@ -22,6 +22,7 @@ from app.quiz.wrap import UntrustedWrapper
 
 Redact = Callable[[str], Awaitable[str]]
 MAX_ATTEMPTS = 2
+GENERATE_TIMEOUT_S = 90.0  # the Pro model writing 7 questions can take well over 30 s
 _TOPICS = ["attack", "why", "defense_layer", "prevention", "divert"]
 _RUBRIC = ["attack", "why", "defense_layer", "prevention"]
 
@@ -159,7 +160,7 @@ async def generate_quiz(
     for _ in range(MAX_ATTEMPTS):
         prompt = build_prompt(context, UntrustedWrapper(), problem)
         try:
-            data = await llm.generate_json(model, prompt, QUIZ_SCHEMA)
+            data = await llm.generate_json(model, prompt, QUIZ_SCHEMA, timeout_s=GENERATE_TIMEOUT_S)
             return await _parse(data, redact, rng)
         except BudgetExhausted:
             raise

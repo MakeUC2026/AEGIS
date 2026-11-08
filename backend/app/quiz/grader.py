@@ -23,6 +23,7 @@ from app.quiz.models import AnswerKey, FreeResponseQuestion
 from app.quiz.wrap import UntrustedWrapper
 
 ATTEMPTS = 2
+GRADE_TIMEOUT_S = 60.0
 NGRAM = 8
 Conversation = Mapping[str, Sequence[tuple[str, str]]]  # question id -> (role, text) turns
 
@@ -173,7 +174,7 @@ async def grade_free_response(
     for _ in range(ATTEMPTS):
         prompt = build_prompt(questions, conversation, key, UntrustedWrapper())
         try:
-            data = await llm.generate_json(model, prompt, GRADER_SCHEMA)
+            data = await llm.generate_json(model, prompt, GRADER_SCHEMA, timeout_s=GRADE_TIMEOUT_S)
         except BudgetExhausted:
             raise
         except LLMError:
