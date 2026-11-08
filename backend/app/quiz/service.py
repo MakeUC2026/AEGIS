@@ -1,0 +1,515 @@
+"""Quiz orchestration: start, assign, resume, retakes (PRD §13.1).
+
+One open attempt per student and session (DB unique index). Starting resumes it; a retake is only
+possible once the last attempt is `done`. Generation happens before any row is written, so a
+failed or invalid quiz never leaves a partial one behind (M4-X17).
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from datetime import UTC, datetime
+
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+
+from app.contracts.arena import ArenaServicePort, ArenaSession
+from app.contracts.firewall_read import FirewallReadPort
+from app.contracts.users import CurrentUser
+from app.quiz import repo, rubric
+from app.quiz.classmate import TurnRecord, conversation_state, is_done, next_follow_up
+from app.quiz.context import build_context
+from app.quiz.errors import (
+    BadInput,
+    Conflict,
+    NotAllowed,
+    QuizMissing,
+    SessionMissing,
+    TooManyRequests,
+)
+from app.quiz.feedback import write_feedback
+from app.quiz.generator import generate_quiz
+from app.quiz.grader import GradingFailed, grade_free_response
+from app.quiz.grading import InvalidAnswer, grade_answer, mcq_points
+from app.quiz.llm import QuizRuntime
+from app.quiz.models import PublicQuiz
+from app.quiz.repo import QuizRow
+from app.quiz.schemas import (
+    AnswerOut,
+    AssignOut,
+    AttemptList,
+    AttemptRow,
+    ItemGrade,
+    MineList,
+    MineRow,
+    QuizView,
+    ResultView,
+    TurnOut,
+)
+
+# Model-spend guards (security review): one paid request at a time per quiz or per student and
+# session, and a cap on generated quizzes per student. Retakes stay allowed within the cap.
+QUIZ_STARTS_PER_HOUR = 6
+BUSY_START = "Your quiz is already being made. Wait a moment, then open it again."
+BUSY_QUIZ = "Your last message is still being processed. Wait a moment and try again."
+RATE_MESSAGE = "You have started many quizzes in the last hour. Please try again later."
+
+
+@asynccontextmanager
+async def _exclusive(deps: QuizDeps, *parts: str, busy: str) -> AsyncIterator[None]:
+    """Hold a non-blocking advisory lock for the block; a second caller gets 409 at once."""
+    async with deps.engine.connect() as conn, conn.begin():
+        if not await repo.try_lock(conn, *parts):
+            raise Conflict(busy)
+        yield
+
+
+@dataclass(frozen=True)
+class QuizDeps:
+    engine: AsyncEngine
+    arena: ArenaServicePort
+    read: FirewallReadPort
+    runtime: QuizRuntime
+
+
+def can_see_quiz(user: CurrentUser, row: QuizRow) -> bool:
+    return user.id == row.user_id or user.has("teacher")
+
+
+async def _session(deps: QuizDeps, session_id: str) -> tuple[ArenaSession, uuid.UUID]:
+    session = await deps.arena.get_session(session_id)
+    sid = repo.parse_uuid(session_id)
+    if session is None or sid is None:
+        raise SessionMissing("session not found")
+    return session, sid
+
+
+async def quiz_view(conn: AsyncConnection, row: QuizRow) -> QuizView:
+    """Public view: questions without answers, plus what the student already answered."""
+    qid = uuid.UUID(row.id)
+    questions = await repo.public_questions(conn, qid)
+    base = PublicQuiz(
+        quiz_id=row.id,
+        session_id=row.session_id,
+        rubric_version=row.rubric_version,
+        questions=questions,
+    )
+    return QuizView(
+        **base.model_dump(),
+        status=row.status,  # type: ignore[arg-type]
+        attempt_number=row.attempt_number,
+        answered=await repo.answered(conn, qid),
+        turns=await repo.turns(conn, qid),
+    )
+
+
+async def load_quiz(
+    deps: QuizDeps, user: CurrentUser, quiz_id: str, *, conn: AsyncConnection
+) -> QuizRow:
+    qid = repo.parse_uuid(quiz_id)
+    row = await repo.get_quiz(conn, qid) if qid else None
+    if row is None:
+        raise QuizMissing("quiz not found")
+    if not can_see_quiz(user, row):
+        raise NotAllowed("forbidden")
+    return row
+
+
+async def get_quiz_view(deps: QuizDeps, user: CurrentUser, quiz_id: str) -> QuizView:
+    async with deps.engine.connect() as conn:
+        row = await load_quiz(deps, user, quiz_id, conn=conn)
+        return await quiz_view(conn, row)
+
+
+async def start_quiz(deps: QuizDeps, user: CurrentUser, session_id: str) -> QuizView:
+    session, sid = await _session(deps, session_id)
+    if session.user_id != user.id:
+        raise NotAllowed("you can only start a quiz on your own session")
+    uid = uuid.UUID(user.id)
+    async with deps.engine.connect() as conn:
+        open_row = await repo.open_attempt(conn, sid, uid)
+    if open_row is not None and open_row.status != "assigned":
+        return await _resume(deps, session, open_row.id)
+
+    async with _exclusive(deps, "start", session_id, user.id, busy=BUSY_START):
+        async with deps.engine.connect() as conn:  # a request that held the lock may have finished
+            open_row = await repo.open_attempt(conn, sid, uid)
+            started = await repo.recent_generations(conn, uid, 1)
+        if open_row is not None and open_row.status != "assigned":
+            return await _resume(deps, session, open_row.id)
+        if started >= QUIZ_STARTS_PER_HOUR:
+            raise TooManyRequests(RATE_MESSAGE)
+        quiz_id = await _generate_and_store(deps, session, sid, uid, open_row)
+    return await _resume(deps, session, str(quiz_id) if quiz_id else None, sid=sid, uid=uid)
+
+
+async def _generate_and_store(
+    deps: QuizDeps,
+    session: ArenaSession,
+    sid: uuid.UUID,
+    uid: uuid.UUID,
+    open_row: QuizRow | None,
+) -> uuid.UUID | None:
+    context = await build_context(session, arena=deps.arena, read=deps.read)
+
+    async def redact(text: str) -> str:
+        return await deps.read.redact_for_session(session.fw_session_id, text)
+
+    spec = await generate_quiz(
+        deps.runtime.llm, model=deps.runtime.pro_model, context=context, redact=redact
+    )
+    key = context.answer_key
+    quiz_id: uuid.UUID | None = None
+    try:
+        async with deps.engine.begin() as conn:
+            if open_row is not None:  # an assigned quiz becomes the student's attempt
+                if await repo.activate_assigned(conn, uuid.UUID(open_row.id), key):
+                    quiz_id = uuid.UUID(open_row.id)
+            else:
+                attempt = await repo.next_attempt_number(conn, sid, uid)
+                quiz_id = await repo.insert_quiz(
+                    conn,
+                    session_id=sid,
+                    user_id=uid,
+                    attempt=attempt,
+                    status="in_progress",
+                    assigned_by=None,
+                    key=key,
+                )
+            if quiz_id is not None:
+                await repo.insert_questions(conn, quiz_id, spec)
+    except IntegrityError:
+        quiz_id = None  # lost a race with another start: use the winner's quiz
+    return quiz_id
+
+
+async def _resume(
+    deps: QuizDeps,
+    session: ArenaSession,
+    quiz_id: str | None,
+    *,
+    sid: uuid.UUID | None = None,
+    uid: uuid.UUID | None = None,
+) -> QuizView:
+    """Return the stored quiz and unlock the recap (idempotent, PRD §6.2, M4-X15)."""
+    async with deps.engine.connect() as conn:
+        if quiz_id is None:
+            assert sid is not None and uid is not None
+            row = await repo.open_attempt(conn, sid, uid)
+            if row is None:
+                raise QuizMissing("quiz not found")
+        else:
+            qid = uuid.UUID(quiz_id)
+            found = await repo.get_quiz(conn, qid)
+            if found is None:
+                raise QuizMissing("quiz not found")
+            row = found
+        view = await quiz_view(conn, row)
+    await deps.arena.unlock_recap(session.id)
+    return view
+
+
+async def assign_quiz(deps: QuizDeps, session_id: str, teacher: CurrentUser) -> AssignOut:
+    session, sid = await _session(deps, session_id)
+    uid, tid = uuid.UUID(session.user_id), uuid.UUID(teacher.id)
+    async with deps.engine.begin() as conn:
+        existing = await repo.open_attempt(conn, sid, uid)
+        if existing is None:
+            attempt = await repo.next_attempt_number(conn, sid, uid)
+            quiz_id = await repo.insert_quiz(
+                conn,
+                session_id=sid,
+                user_id=uid,
+                attempt=attempt,
+                status="assigned",
+                assigned_by=tid,
+                key=None,
+            )
+            return AssignOut(
+                quiz_id=str(quiz_id),
+                session_id=session.id,
+                status="assigned",
+                attempt_number=attempt,
+            )
+        return AssignOut(
+            quiz_id=existing.id,
+            session_id=session.id,
+            status=existing.status,  # type: ignore[arg-type]
+            attempt_number=existing.attempt_number,
+        )
+
+
+def _iso(value: object) -> str:
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
+async def attempts_view(deps: QuizDeps, user: CurrentUser, session_id: str) -> AttemptList:
+    sid = repo.parse_uuid(session_id)
+    if sid is None:
+        raise SessionMissing("session not found")
+    owner = None if user.has("teacher") else uuid.UUID(user.id)
+    async with deps.engine.connect() as conn:
+        records = await repo.attempts(conn, session_id=sid, user_id=owner)
+    ordered = sorted(records, key=lambda r: r.attempt_number, reverse=True)
+    percents = [r.percent for r in ordered if r.percent is not None]
+    latest = next((r for r in ordered if r.status == "done"), None)
+    return AttemptList(
+        session_id=session_id,
+        attempts=[
+            AttemptRow(
+                quiz_id=r.quiz_id,
+                attempt_number=r.attempt_number,
+                status=r.status,  # type: ignore[arg-type]
+                percent=r.percent,
+                created_at=_iso(r.created_at),
+                finished_at=_iso(r.finished_at) if r.finished_at else None,
+            )
+            for r in ordered
+        ],
+        latest_percent=latest.percent if latest else None,
+        best_percent=max(percents) if percents else None,
+    )
+
+
+async def mine_view(deps: QuizDeps, user: CurrentUser) -> MineList:
+    async with deps.engine.connect() as conn:
+        records = await repo.attempts(conn, session_id=None, user_id=uuid.UUID(user.id))
+    return MineList(
+        items=[
+            MineRow(
+                quiz_id=r.quiz_id,
+                session_id=r.session_id,
+                attempt_number=r.attempt_number,
+                status=r.status,  # type: ignore[arg-type]
+                percent=r.percent,
+                created_at=_iso(r.created_at),
+            )
+            for r in records
+        ]
+    )
+
+
+async def _owned_open_quiz(conn: AsyncConnection, user: CurrentUser, quiz_id: str) -> QuizRow:
+    """The caller's own quiz, still in progress. Teachers read quizzes but never act in them."""
+    qid = repo.parse_uuid(quiz_id)
+    row = await repo.get_quiz(conn, qid) if qid else None
+    if row is None:
+        raise QuizMissing("quiz not found")
+    if row.user_id != user.id:
+        raise NotAllowed("forbidden")
+    if row.status != "in_progress":
+        raise Conflict("this quiz is not open for answers")
+    return row
+
+
+async def answer_mcq(
+    deps: QuizDeps, user: CurrentUser, quiz_id: str, question_id: str, index: int
+) -> AnswerOut:
+    async with deps.engine.begin() as conn:
+        row = await _owned_open_quiz(conn, user, quiz_id)
+        qid = uuid.UUID(row.id)
+        spec = await repo.load_spec(conn, qid, row.rubric_version)
+        if question_id not in {q.id for q in spec.questions}:
+            raise QuizMissing("question not found")
+        answered = await repo.chosen_map(conn, qid)
+        try:
+            result = grade_answer(spec, answered, question_id, index)
+        except InvalidAnswer as exc:
+            raise BadInput(str(exc)) from None
+        if not result.already_answered and not await repo.record_choice(
+            conn, qid, question_id, index
+        ):  # lost a race: the other request's answer is the first one
+            result = grade_answer(spec, await repo.chosen_map(conn, qid), question_id, index)
+    return AnswerOut(
+        question_id=question_id,
+        chosen_index=result.chosen_index,
+        correct=result.correct,
+        explanation=result.explanation,
+        already_answered=result.already_answered,
+    )
+
+
+async def post_turn(
+    deps: QuizDeps, user: CurrentUser, quiz_id: str, question_id: str, body: str
+) -> TurnOut:
+    """A student's message on a free-response prompt; returns the classmate's follow-up."""
+    body = body.strip()
+    if not body:
+        raise BadInput("write something first")
+    async with _exclusive(deps, "quiz", quiz_id, busy=BUSY_QUIZ):
+        return await _post_turn(deps, user, quiz_id, question_id, body)
+
+
+async def _post_turn(
+    deps: QuizDeps, user: CurrentUser, quiz_id: str, question_id: str, body: str
+) -> TurnOut:
+    async with deps.engine.connect() as conn:
+        row = await _owned_open_quiz(conn, user, quiz_id)
+        qid = uuid.UUID(row.id)
+        found = await repo.free_response_of(conn, qid, question_id)
+        if found is None:
+            raise QuizMissing("question not found")
+        kind, prompt, max_follow_ups = found
+        if kind != "free_response":
+            raise BadInput("this is a multiple-choice question; use the answer route")
+        turns = await repo.question_turns(conn, qid, question_id)
+    state = conversation_state(turns, max_follow_ups, datetime.now(UTC))
+    if state.closed_reason is not None:
+        return TurnOut(
+            question_id=question_id,
+            accepted=False,
+            reply=None,
+            follow_ups_used=state.follow_ups_used,
+            closed=True,
+            reason=state.closed_reason,
+        )
+    session = await deps.arena.get_session(row.session_id)
+    if session is None:
+        raise SessionMissing("session not found")
+    clean = await deps.read.redact_for_session(session.fw_session_id, body)
+    new: list[tuple[str, str]] = [] if turns else [("classmate", prompt)]
+    new.append(("student", clean))
+    reply: str | None = None
+    closing: str | None = None
+    if is_done(clean):
+        closing = "done"
+    elif state.follow_ups_used >= max_follow_ups:
+        closing = "follow_up_limit"
+    else:
+        reply = await next_follow_up(
+            deps.runtime.llm,
+            model=deps.runtime.flash_model,
+            question=prompt,
+            turns=turns or [TurnRecord(1, "classmate", prompt, datetime.now(UTC))],
+            new_text=clean,
+        )
+        reply = await deps.read.redact_for_session(session.fw_session_id, reply)
+        new.append(("classmate", reply))
+    try:
+        async with deps.engine.begin() as conn:
+            first = (turns[-1].seq + 1) if turns else 1
+            await repo.add_turns(conn, qid, question_id, first, new)
+    except IntegrityError:
+        raise Conflict("another message was sent at the same time; try again") from None
+    used = state.follow_ups_used + (1 if reply else 0)
+    return TurnOut(
+        question_id=question_id,
+        accepted=True,
+        reply=reply,
+        follow_ups_used=used,
+        closed=closing is not None,
+        reason=closing,  # type: ignore[arg-type]
+    )
+
+
+def _result_view(row: QuizRow, stored: repo.StoredResult | None, *, staff: bool) -> ResultView:
+    items = None
+    if stored is not None and staff:
+        items = [
+            ItemGrade(
+                key=i.key, title=i.title, score=stored.item_scores.get(i.key, 0), max=i.max_points
+            )
+            for i in rubric.RUBRIC
+        ]
+    return ResultView(
+        quiz_id=row.id,
+        session_id=row.session_id,
+        attempt_number=row.attempt_number,
+        status=row.status,  # type: ignore[arg-type]
+        mcq_points=stored.mcq_points if stored else None,
+        mcq_max=rubric.MCQ_MAX,
+        total_points=stored.total_points if stored else None,
+        max_points=rubric.TOTAL_POINTS,
+        percent=stored.percent if stored else None,
+        feedback=stored.feedback if stored else None,
+        items=items,
+    )
+
+
+async def get_result(deps: QuizDeps, user: CurrentUser, quiz_id: str) -> ResultView:
+    async with deps.engine.connect() as conn:
+        row = await load_quiz(deps, user, quiz_id, conn=conn)
+        stored = await repo.get_result(conn, uuid.UUID(row.id))
+    return _result_view(row, stored, staff=user.has("teacher"))
+
+
+async def finish_quiz(
+    deps: QuizDeps, user: CurrentUser, quiz_id: str, *, regrade: bool = False
+) -> ResultView:
+    """Grade the quiz and write the feedback. Idempotent: a finished quiz returns its result."""
+    async with _exclusive(deps, "quiz", quiz_id, busy=BUSY_QUIZ):
+        return await _finish_quiz(deps, user, quiz_id, regrade=regrade)
+
+
+async def _finish_quiz(
+    deps: QuizDeps, user: CurrentUser, quiz_id: str, *, regrade: bool = False
+) -> ResultView:
+    async with deps.engine.connect() as conn:
+        qid = repo.parse_uuid(quiz_id)
+        row = await repo.get_quiz(conn, qid) if qid else None
+        if row is None:
+            raise QuizMissing("quiz not found")
+        if row.user_id != user.id:
+            raise NotAllowed("forbidden")
+        if row.status == "done":
+            stored = await repo.get_result(conn, uuid.UUID(row.id))
+            return _result_view(row, stored, staff=False)
+        if row.status == "assigned" or (regrade and row.status != "grading_failed"):
+            raise Conflict("this quiz cannot be graded yet")
+        rid = uuid.UUID(row.id)
+        spec = await repo.load_spec(conn, rid, row.rubric_version)
+        chosen = await repo.chosen_map(conn, rid)
+        conversation = await repo.conversations(conn, rid)
+    key = row.answer_key
+    if key is None:
+        raise Conflict("this quiz has no answer key")
+    session = await deps.arena.get_session(row.session_id)
+    if session is None:
+        raise SessionMissing("session not found")
+
+    mcq = mcq_points(spec, chosen)
+    try:
+        scores = await grade_free_response(
+            deps.runtime.llm,
+            model=deps.runtime.pro_model,
+            questions=spec.free_responses,
+            conversation=conversation,
+            key=key,
+        )
+    except GradingFailed:
+        async with deps.engine.begin() as conn:
+            await repo.mark_grading_failed(conn, rid)
+        failed = QuizRow(**{**row.__dict__, "status": "grading_failed"})
+        return _result_view(failed, None, staff=False)
+
+    async def redact(text: str) -> str:
+        return await deps.read.redact_for_session(session.fw_session_id, text)
+
+    written = await write_feedback(
+        deps.runtime.llm,
+        model=deps.runtime.flash_model,
+        mcq_points=mcq,
+        item_scores=scores,
+        key=key,
+        redact=redact,
+    )
+    total = mcq + sum(scores.values())
+    async with deps.engine.begin() as conn:
+        await repo.insert_result(
+            conn,
+            rid,
+            rubric_version=row.rubric_version,
+            mcq_points=mcq,
+            item_scores=scores,
+            total_points=total,
+            percent=rubric.percent(mcq_points=mcq, item_scores=scores),
+            feedback=written.text,
+        )
+    async with deps.engine.connect() as conn:
+        done = await repo.get_quiz(conn, rid)
+        stored = await repo.get_result(conn, rid)
+    assert done is not None
+    return _result_view(done, stored, staff=False)
