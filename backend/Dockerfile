@@ -1,5 +1,5 @@
 # One image, two services (PRD §3.2 Railway): `api` and `worker`. Runs as a non-root user.
-FROM python:3.12-slim AS base
+FROM python:3.15-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
