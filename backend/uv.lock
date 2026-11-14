@@ -56,7 +56,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.20" },
     { name = "asyncpg", specifier = ">=0.32" },
-    { name = "auth0-api-python", specifier = "==1.0.0b10" },
+    { name = "auth0-api-python", specifier = "==1.0.0b11" },
     { name = "fastapi", specifier = ">=0.162,<0.200" },
     { name = "google-re2", specifier = ">=1.1" },
     { name = "httpx", specifier = ">=0.28" },
@@ -153,17 +153,19 @@ wheels = [
 
 [[package]]
 name = "auth0-api-python"
-version = "1.0.0b10"
+version = "1.0.0b11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ada-url" },
     { name = "authlib" },
+    { name = "cryptography" },
     { name = "httpx" },
+    { name = "jwcrypto" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fa/0e/5a3af89ded46192bdcf90fea97567ee3c1e324217b29d3e6ab8a36914c4f/auth0_api_python-1.0.0b10.tar.gz", hash = "sha256:f9280274dcf086ff21ae7209c987d3ddea7c6777e4ad05a514e42cc7101b104d", size = 33273, upload-time = "2026-08-03T11:26:04.789Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5e/d1/556f912f73c5e2c75143c90684cb3f91a93c8378edacea8569ef74d30b40/auth0_api_python-1.0.0b11.tar.gz", hash = "sha256:08216a30c371bf7d716793cb287872e7c6cefc533d8639bddcaba55157e4052d", size = 46067, upload-time = "2026-11-11T12:12:25.464Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ed/b9/4e9467d9b7886327d0d3acc4812b2c41af03599cf784eb3b3c90454c2ea4/auth0_api_python-1.0.0b10-py3-none-any.whl", hash = "sha256:a0cb23d1f9ff0d790a6e5408a42473363a414c1043a457733f0619ed40f71476", size = 31908, upload-time = "2026-08-03T11:26:03.395Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/27/b89ba94e31afbbacda307136faa514f42671d63a2ef769296c294609036a/auth0_api_python-1.0.0b11-py3-none-any.whl", hash = "sha256:b1d82997300f83b6874c7a8f4a5fb9ff58fb4c63b83c81d188b278a472d0f72f", size = 46937, upload-time = "2026-11-11T12:12:24.271Z" },
 ]
 
 [[package]]
@@ -631,6 +633,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/19/74/a633ee74eb36c44aa6d1095e7cc5569bebf04342ee146178e2d36600708b/jsonschema_specifications-2025.9.1.tar.gz", hash = "sha256:b540987f239e745613c7a9176f3edb72b832a4ac465cf02712288397832b5e8d", size = 32855, upload-time = "2025-09-08T01:34:59.186Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/41/45/1a4ed80516f02155c51f51e8cedb3c1902296743db0bbc66608a0db2814f/jsonschema_specifications-2025.9.1-py3-none-any.whl", hash = "sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe", size = 18437, upload-time = "2025-09-08T01:34:57.871Z" },
+]
+
+[[package]]
+name = "jwcrypto"
+version = "1.6.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/13/8f/e802d77957903483129813ce6fa01a72a906f9cdd454039d1ec1e6d1e44a/jwcrypto-1.6.1.tar.gz", hash = "sha256:a1e1570da5c2e35dbcd375ec1d2891a24de8eb35ee2c1fe8e91978efb72cfe90", size = 116287, upload-time = "2026-09-15T21:22:33.286Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/31/a4/ee780473e42a3edaf65da1ad37f5c601a9c740e215c1e09db36bf90f3f59/jwcrypto-1.6.1-py3-none-any.whl", hash = "sha256:77e856818e514cb3d64a1043b6885a7d52f5cc37773f5e944de02103c8d3a54f", size = 121267, upload-time = "2026-09-15T21:22:32.27Z" },
 ]
 
 [[package]]
